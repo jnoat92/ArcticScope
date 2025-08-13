@@ -315,7 +315,7 @@ class Visualizer(ctk.CTk):
         # Add available label sources
         for i, (key, pred, landmask, boundmask) in enumerate(variables):
             if pred is None: 
-                if key != 'Custom Annotation':
+                if key != 'Custom_Annotation':
                     messagebox.showinfo("Error", f"The selected scene does not contain prediction files for {key}.", parent=self.master)
                 continue
             self.update_label_source_widgets(key, i)
@@ -885,7 +885,7 @@ class Visualizer(ctk.CTk):
         
         # Remove custom annotation from seg sources
         for i in range(len(self.lbl_source)):
-            if self.lbl_source[i] == 'Custom Annotation':
+            if self.lbl_source[i] == 'Custom_Annotation':
                 self.lbl_source.pop(i)
                 break
         for key in self.lbl_source_buttom.keys():
@@ -1039,11 +1039,11 @@ class Visualizer(ctk.CTk):
             self.reset_annotation()
             return
             
-        key = "Custom Annotation"
+        key = "Custom_Annotation"
         if key not in self.lbl_source_buttom.keys():
             # Add custom annotation as and additional label source
             self.lbl_source.append(key)
-            self.filenames.append("/{}/{}".format(self.lbl_source[-1], "custom_annotation.png"))
+            self.filenames.append("{}/{}/{}".format(self.lbl_source[-1], self.scene_name, "custom_annotation.png"))
             self.lbl_source_buttom[key] = ctk.CTkRadioButton(self.lbl_source_frame, 
                                                              text=f"* {key}", 
                                                              variable=self.mode_var_lbl_source, 
@@ -1079,10 +1079,10 @@ class Visualizer(ctk.CTk):
         self.reset_annotation()
 
     def label_ice(self):
-        self.annotate_class([255, 130, 0])
+        self.annotate_class([128, 0, 0])
 
     def label_water(self):
-        self.annotate_class([0, 255, 255])
+        self.annotate_class([0, 0, 128])
 
 
     # Misc

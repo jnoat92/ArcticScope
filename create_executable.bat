@@ -1,18 +1,17 @@
 @echo off
-REM Set root folder for all build output
-set ROOT=C:\Users\jnoaturn\OneDrive - University of Waterloo\Temp\SeaIceMap
+REM Build executable
 
-REM Run PyInstaller
+set ROOT="C:\Users\jnoaturn\OneDrive - University of Waterloo\Temp"
+
 pyinstaller visualizer.py ^
   --onedir ^
   --windowed ^
   --name SeaIceMap ^
-  --distpath "%ROOT%\dist" ^
-  --workpath "%ROOT%\build" ^
-  --specpath "%ROOT%\spec" ^
-  --clean ^
-  --noconfirm
+  --distpath %ROOT% ^
+  --add-data "icons;icons" ^
+  --noconfirm ^
+  --clean
 
 echo.
-echo Build complete. Output is in "%ROOT%\dist"
+echo Build complete. Output is in "%ROOT%\SeaIceMap"
 pause

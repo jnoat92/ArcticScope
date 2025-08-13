@@ -100,7 +100,7 @@ class EvaluationPanel(ctk.CTkFrame):
             return False
 
         lbl_source = self.command_parent.mode_var_lbl_source.get()
-        if lbl_source == "Custom Annotation":
+        if lbl_source == "Custom_Annotation":
             messagebox.showerror("Warning", "Please, evaluate segmentation source different from 'Custom Annotation'.")
             return False
 

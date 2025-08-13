@@ -9,6 +9,16 @@ from tkinter import Canvas
 import numpy as np
 import cv2
 from utils import blend_overlay, generate_boundaries, rgb2gray
+import sys
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller."""
+    if hasattr(sys, '_MEIPASS'):
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 class AnnotationPanel(ctk.CTkFrame):
     def __init__(self, parent, command_parent=None):
@@ -23,9 +33,9 @@ class AnnotationPanel(ctk.CTkFrame):
         self.drawing_frame = ctk.CTkFrame(self)
         self.drawing_frame.grid(row=0, column=0, padx=5, pady=5)
         ctk.CTkLabel(self.drawing_frame, text="Draw Polygon").grid(row=0, column=0, columnspan=3, sticky="nsew", pady=5)
-        ctk.CTkButton(self.drawing_frame, text="", image=ctk.CTkImage(Image.open("icons/rectangle.png"), size=(20, 20)), 
+        ctk.CTkButton(self.drawing_frame, text="", image=ctk.CTkImage(Image.open(resource_path("icons/rectangle.png")), size=(20, 20)), 
                       width=20, command=command_parent.draw_rectangle).grid(row=1, column=0, padx=5, pady=5)
-        ctk.CTkButton(self.drawing_frame, text="", image=ctk.CTkImage(Image.open("icons/polygon.png"), size=(20, 20)), 
+        ctk.CTkButton(self.drawing_frame, text="", image=ctk.CTkImage(Image.open(resource_path("icons/polygon.png")), size=(20, 20)), 
                       width=20, command=command_parent.draw_polygon).grid(row=1, column=1, padx=5, pady=5)
         
         # Labels for annotation
@@ -52,7 +62,7 @@ class AnnotationPanel(ctk.CTkFrame):
 
     def reset_label_from(self):
         """Reset the label from available label sources."""
-        if 'Custom Annotation' not in self.command_parent.lbl_source:
+        if 'Custom_Annotation' not in self.command_parent.lbl_source:
             messagebox.showinfo("Error", "There is no custom annotation registered.", parent=self.master)
             return
 
@@ -94,7 +104,7 @@ class AnnotationPanel(ctk.CTkFrame):
         self.zoom_mode_var_lbl_source = None
         self.zoom_lbl_source_buttons = {}
         for lbl_s in self.command_parent.lbl_source:
-            if lbl_s == 'Custom Annotation':
+            if lbl_s == 'Custom_Annotation':
                 continue
             if self.zoom_mode_var_lbl_source is None:
                 self.zoom_mode_var_lbl_source = ctk.StringVar(value=lbl_s)
@@ -193,9 +203,9 @@ class AnnotationPanel(ctk.CTkFrame):
 
         # Update the prediction in the selected area
         if self.command_parent.selected_polygon_area_idx:
-            self.command_parent.mode_var_lbl_source.set("Custom Annotation")
+            self.command_parent.mode_var_lbl_source.set("Custom_Annotation")
             main_key = self.command_parent.mode_var_lbl_source.get()
-            # if main_key != "Custom Annotation":
+            # if main_key != "Custom_Annotation":
             #     messagebox.showinfo("Error", "Only 'Custom Annotation' segmentation source can be reset.", parent=self.zoom_window)
             #     return
 
@@ -234,12 +244,12 @@ class AnnotationPanel(ctk.CTkFrame):
 
     def save_annotation(self):
 
-        key = "Custom Annotation"
+        key = "Custom_Annotation"
         if key not in self.command_parent.predictions.keys():
             messagebox.showerror("Error", f"There is no {key} to save.")
             return False
         
-        file_path = self.command_parent.folder_path + self.command_parent.filenames[list(self.command_parent.predictions).index(key)]
+        file_path = self.command_parent.filenames[list(self.command_parent.predictions).index(key)]
         os.makedirs(os.path.split(file_path)[0], exist_ok=True)
         Image.fromarray(self.command_parent.predictions[key]).save(file_path)
 
