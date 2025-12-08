@@ -892,6 +892,7 @@ class Visualizer(ctk.CTk):
             self.Choose_lbl_source()
 
         self.reset_annotation()
+        self.annotation_panel.unsaved_changes = False
         self.annotation_window.withdraw()
 
         return 1
