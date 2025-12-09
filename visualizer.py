@@ -105,7 +105,7 @@ class Visualizer(ctk.CTk):
         # Left sidebar for controls
         self.sidebar = ctk.CTkFrame(self.main_container, width=200)
         self.sidebar.pack(side="left", fill="y", padx=0, pady=0)
-        self.sidebar.pack_propagate(False)  # Prevent sidebar from resizing to fit contents
+        # self.sidebar.pack_propagate(False)  # Prevent sidebar from resizing to fit contents
 
         # Canvas on the right
         self.canvas = Canvas(self.main_container, bg="black")
@@ -173,7 +173,7 @@ class Visualizer(ctk.CTk):
 
         # Better Contrast ON/OFF
         ctk.CTkLabel(self.select_image_frame, text="Better contrast").grid(
-            row=4, column=0, sticky="e", padx=5, pady=5
+            row=4, column=0, sticky="w", padx=5, pady=5
         )
 
         self.Better_contrast_toggle_state = True
