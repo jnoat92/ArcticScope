@@ -26,9 +26,11 @@ import os
 from parallel_stuff import Parallel
 import multiprocessing
 
-if __name__ == '__main__':
-
+def main():
     multiprocessing.freeze_support()
-    
+
     app = Visualizer()
     app.mainloop()
+
+if __name__ == '__main__':
+    main()

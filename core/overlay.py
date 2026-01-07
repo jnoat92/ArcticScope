@@ -1,3 +1,9 @@
+'''
+Overlay related functions
+
+Last modified: Jan 2026
+'''
+
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import Canvas, filedialog, messagebox

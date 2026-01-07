@@ -400,44 +400,11 @@ class Visualizer(ctk.CTk):
             self.boundmasks[key] = boundmask
 
 
-    # # Display handle
+    # Display handle
 
-    # def Overlay_GPU(self):
-    #     # Using Numba on the GPU to parallelize 
-    #     h, w, c = self.pred_resized.shape
-    #     pred = self.pred_resized.astype(np.float32)
-    #     img = self.img_resized.astype(np.float32)
-
-    #     d_pred = cuda.to_device(pred)
-    #     d_img = cuda.to_device(img)
-    #     d_boundmask = cuda.to_device(self.boundmask_resized)
-    #     d_landmask = cuda.to_device(self.landmask_resized)
-    #     d_out = cuda.device_array((h, w, c), dtype=np.float32)
-
-    #     threadsperblock = (16, 16)
-    #     blockspergrid_x = (w + threadsperblock[1] - 1) // threadsperblock[1]
-    #     blockspergrid_y = (h + threadsperblock[0] - 1) // threadsperblock[0]
-    #     blockspergrid = (blockspergrid_y, blockspergrid_x)
-
-    #     blend_overlay_cuda[blockspergrid, threadsperblock](d_pred, d_img, d_boundmask, d_landmask, self.alpha, d_out)
-
-    #     blended = d_out.copy_to_host()
-    #     self.overlay = blended.astype(np.uint8)
-
-    # def Overlay(self):
-
-    #     # alpha = self.alpha
-    #     # beta = 1 - alpha
-    #     # overlay = alpha * self.pred_resized + beta * self.img_resized
-    #     # overlay = np.where(self.boundmask_resized[..., None], self.pred_resized, overlay)
-    #     # overlay = np.where(self.landmask_resized[..., None], 255, overlay)        # Use float32 for fast computation
-
-    #     # Using Numba on the CPU to parallelize 
-    #     pred = self.pred_resized.astype(np.float32)
-    #     img = self.img_resized.astype(np.float32)
-    #     overlay = blend_overlay(pred, img, self.boundmask_resized, self.landmask_resized, self.alpha)
-
-    #     self.overlay = overlay.astype(np.uint8)
+    def set_overlay(self):
+        self.overlay = compose_overlay(self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, 
+                                self.alpha)
 
     def Choose_image(self):
         if self.Better_contrast_toggle_state:
@@ -446,9 +413,7 @@ class Visualizer(ctk.CTk):
             self.img = self.img_[self.channels]
 
     def display_image(self):
-        # image = self.overlay if self.Segmentation_toggle_state else self.img_resized.astype('uint8')
-        image = compose_overlay(self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, 
-                                self.alpha) if self.Segmentation_toggle_state else self.img_resized.astype('uint8')
+        image = self.overlay if self.Segmentation_toggle_state else self.img_resized.astype('uint8')
 
         self.tk_image = ImageTk.PhotoImage(Image.fromarray(image))
 
@@ -590,8 +555,7 @@ class Visualizer(ctk.CTk):
         self.Choose_image()
 
         self.crop_resize()
-        self.overlay = compose_overlay(self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, 
-                                self.alpha)
+        self.set_overlay()
         self.display_image()
 
         if self.polygon_points_img_coor: 
@@ -609,8 +573,7 @@ class Visualizer(ctk.CTk):
     def Opacity_slider(self, val):
         # self.slider_label.config(text=f"{float(val):.2f}")
         self.alpha = float(val)/100
-        self.overlay = compose_overlay(self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, 
-                                self.alpha)
+        self.set_overlay()
         self.display_image()
 
         if self.polygon_points_img_coor: 
@@ -679,8 +642,7 @@ class Visualizer(ctk.CTk):
         self.offset_y = int(canvas_height / 2 - center_y * self.zoom_factor)
 
         self.crop_resize()
-        self.overlay = compose_overlay(self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, 
-                                self.alpha)
+        self.set_overlay()
         self.display_image()
         if self.polygon_points_img_coor: 
             self.draw_polygon_on_canvas()
@@ -705,8 +667,7 @@ class Visualizer(ctk.CTk):
         self.offset_y = (canvas_height - new_height) // 2
 
         self.crop_resize()
-        self.overlay = compose_overlay(self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, 
-                                self.alpha)
+        self.set_overlay()
         self.display_image()
         if self.polygon_points_img_coor: 
             self.draw_polygon_on_canvas()
@@ -731,8 +692,7 @@ class Visualizer(ctk.CTk):
 
         if plot:
             self.crop_resize()
-            self.overlay = compose_overlay(self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, 
-                                self.alpha)
+            self.set_overlay()
             self.display_image()
 
         self.reset_annotation()
@@ -770,8 +730,7 @@ class Visualizer(ctk.CTk):
         self.offset_y = canvas_y - img_y * self.zoom_factor
 
         self.crop_resize()
-        self.overlay = compose_overlay(self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, 
-                                self.alpha)
+        self.set_overlay()
         self.display_image()
         if self.polygon_points_img_coor: 
             self.draw_polygon_on_canvas()
@@ -811,8 +770,7 @@ class Visualizer(ctk.CTk):
             self.drag_start = (event.x, event.y)
             
             self.crop_resize()
-            self.overlay = compose_overlay(self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, 
-                                self.alpha)
+            self.set_overlay()
             self.display_image()
             if self.polygon_points_img_coor: 
                 self.draw_polygon_on_canvas()
@@ -1155,8 +1113,7 @@ class Visualizer(ctk.CTk):
         self.boundmasks[key] = self.boundmask.copy()
 
         self.crop_resize()
-        self.overlay = compose_overlay(self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, 
-                                self.alpha)
+        self.set_overlay()
         self.display_image()
 
         # Reset variables

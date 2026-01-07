@@ -1,3 +1,10 @@
+'''
+Image input/output related functions
+Handles loading of images and predictions and path to external resources
+
+Last modified: Jan 2026
+'''
+
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import Canvas, filedialog, messagebox
@@ -6,8 +13,6 @@ import numpy as np
 from skimage.measure import find_contours, label
 
 from skimage.morphology import binary_dilation, disk
-from ui.evaluation import EvaluationPanel
-from ui.annotation import AnnotationPanel
 from utils import blend_overlay_cuda, blend_overlay, rgb2gray
 from utils import generate_boundaries
 
@@ -16,6 +21,7 @@ import cv2
 import os
 from parallel_stuff import Parallel
 import multiprocessing
+import sys
 
 def PredictionLoader(iterator):
     key, filename = iterator
@@ -93,3 +99,12 @@ def load_prediction(self):
         self.predictions[key] = pred
         self.landmasks[key] = landmask
         self.boundmasks[key] = boundmask
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller."""
+    if hasattr(sys, '_MEIPASS'):
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)

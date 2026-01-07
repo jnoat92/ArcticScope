@@ -1,3 +1,9 @@
+'''
+Annotation panel setup and functions
+
+Last modified: Jan 2026
+'''
+
 import customtkinter as ctk
 from tkinter import messagebox
 import json
@@ -9,16 +15,7 @@ from tkinter import Canvas
 import numpy as np
 import cv2
 from utils import blend_overlay, generate_boundaries, rgb2gray
-import sys
-
-def resource_path(relative_path):
-    """Get absolute path to resource, works for dev and for PyInstaller."""
-    if hasattr(sys, '_MEIPASS'):
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
-    else:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
+from core.io import resource_path
 
 class AnnotationPanel(ctk.CTkFrame):
     def __init__(self, parent, command_parent=None):
@@ -230,7 +227,7 @@ class AnnotationPanel(ctk.CTkFrame):
 
             # Update main display
             self.command_parent.crop_resize()
-            self.command_parent.Overlay()
+            self.command_parent.set_overlay()
             self.command_parent.display_image()
             if self.command_parent.polygon_points_img_coor: 
                 self.command_parent.draw_polygon_on_canvas()
@@ -275,15 +272,15 @@ class AnnotationPanel(ctk.CTkFrame):
         pass
         
 
-if __name__ == '__main__':
-    ctk.set_appearance_mode("System")  # "Dark", "Light", or "System"
-    ctk.set_default_color_theme("blue")  # or "green", "dark-blue", etc.
+# if __name__ == '__main__':
+#     ctk.set_appearance_mode("System")  # "Dark", "Light", or "System"
+#     ctk.set_default_color_theme("blue")  # or "green", "dark-blue", etc.
 
-    root = ctk.CTk()
-    root.title("Annotation Panel")
+#     root = ctk.CTk()
+#     root.title("Annotation Panel")
 
-    panel = AnnotationPanel(root)
-    panel.pack(padx=10, pady=10, fill="both", expand=True)
+#     panel = AnnotationPanel(root)
+#     panel.pack(padx=10, pady=10, fill="both", expand=True)
 
 
-    root.mainloop()
+#     root.mainloop()

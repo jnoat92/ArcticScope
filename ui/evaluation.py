@@ -1,5 +1,7 @@
 '''
-Docstring for ui.evaluation
+Evaluation panel setup and functions
+
+Last modified: Jan 2026
 '''
 
 import customtkinter as ctk
@@ -243,16 +245,16 @@ class EvaluationPanel(ctk.CTkFrame):
         self.save_button.configure(text="Save Evaluation")
 
 
-if __name__ == '__main__':
-    ctk.set_appearance_mode("System")  # "Dark", "Light", or "System"
-    ctk.set_default_color_theme("blue")  # or "green", "dark-blue", etc.
+# if __name__ == '__main__':
+#     ctk.set_appearance_mode("System")  # "Dark", "Light", or "System"
+#     ctk.set_default_color_theme("blue")  # or "green", "dark-blue", etc.
 
-    root = ctk.CTk()
-    root.title("Evaluation Panel")
+#     root = ctk.CTk()
+#     root.title("Evaluation Panel")
 
-    panel = EvaluationPanel(root)
-    panel.pack(padx=10, pady=10, fill="both", expand=True)
+#     panel = EvaluationPanel(root)
+#     panel.pack(padx=10, pady=10, fill="both", expand=True)
 
-    panel.set_scene_name("example_scene")
+#     panel.set_scene_name("example_scene")
 
-    root.mainloop()
+#     root.mainloop()
