@@ -21,11 +21,9 @@ from core.io import PredictionLoader, load_images, load_prediction
 from core.segmentation import get_segment_contours
 from core.overlay import compose_overlay
 
-from numba import cuda
 import cv2
 import os
-from parallel_stuff import Parallel
-import multiprocessing
+
 
 
 class Visualizer(ctk.CTk):
@@ -339,45 +337,13 @@ class Visualizer(ctk.CTk):
                                                                 command=self.Choose_lbl_source)
         self.lbl_source_buttom[lbl_source].grid(row=i+1, column=0, sticky="w", pady=(10, 10))
 
-    def Load_Images(self):
-
-        try:
-            HH = np.asarray(Image.open(self.folder_path + "/imagery_HH_UW_4_by_4_average.tif")) 
-            HV = np.asarray(Image.open(self.folder_path + "/imagery_HV_UW_4_by_4_average.tif"))
-
-            HH_better_contrast = np.asarray(Image.open(self.folder_path + "/enhanced_images/imagery_HH_UW_4_by_4_average.png"))
-            HV_better_contrast = np.asarray(Image.open(self.folder_path + "/enhanced_images/imagery_HV_UW_4_by_4_average.png"))
-
-        except FileNotFoundError as e:
-            messagebox.showinfo("Error", f"The selected directory does not contain the required files. Please, select a valid directory.\n\n{e}", parent=self.master)
-            return 0
-
-        self.img_ = {}
-        self.img_["HH"] = np.tile(HH[:,:,np.newaxis], (1,1,3))
-        self.img_["HV"] = np.tile(HV[:,:,np.newaxis], (1,1,3))
-        self.img_["(HH, HH, HV)"] = np.stack([HH, HH, HV], axis=-1)
-        self.img_["(HH, HV, HV)"] = np.stack([HH, HV, HV], axis=-1)
-
-        self.img_Better_contrast = {}
-        self.img_Better_contrast["HH"] = np.tile(HH_better_contrast[:,:,np.newaxis], (1,1,3))
-        self.img_Better_contrast["HV"] = np.tile(HV_better_contrast[:,:,np.newaxis], (1,1,3))
-        self.img_Better_contrast["(HH, HH, HV)"] = np.stack([HH_better_contrast, HH_better_contrast, HV_better_contrast], axis=-1)
-        self.img_Better_contrast["(HH, HV, HV)"] = np.stack([HH_better_contrast, HV_better_contrast, HV_better_contrast], axis=-1)
-
-        return 1
-
     def Load_pred(self):
 
         self.predictions = {}
         self.landmasks = {}
         self.boundmasks = {}
 
-        filenames = [self.folder_path + f for f in self.filenames]
-        
-        if len(self.lbl_source) > 1:
-            variables = Parallel(PredictionLoader, zip(self.lbl_source, filenames))
-        else:
-            variables = [PredictionLoader(zip(self.lbl_source, filenames))]
+        variables = load_prediction(self.folder_path, self.filenames, self.lbl_source)
         
         # variables = [PredictionLoader(it) for it in zip(lbl_source, filenames)]
         
@@ -495,9 +461,16 @@ class Visualizer(ctk.CTk):
             self.scene_name = self.folder_path.split('/')[-1]
 
             self.title(f"Scene {self.scene_name}-{self.channels}")
-            if not self.Load_Images(): 
+
+            images = load_images(self.folder_path)
+            
+            if isinstance(images, FileNotFoundError):
+                messagebox.showinfo("Error", f"The selected directory does not contain the required files. Please, select a valid directory.\n\n{images}", parent=self.master)
                 self.folder_path = ''
                 return
+            else:
+                self.img_, self.img_Better_contrast = images
+            
             
             self.Choose_image()
             self.Load_pred()

@@ -5,22 +5,14 @@ Handles loading of images and predictions and path to external resources
 Last modified: Jan 2026
 '''
 
-import customtkinter as ctk
-import tkinter as tk
-from tkinter import Canvas, filedialog, messagebox
-from PIL import Image, ImageTk
+from PIL import Image
 import numpy as np
-from skimage.measure import find_contours, label
 
-from skimage.morphology import binary_dilation, disk
-from utils import blend_overlay_cuda, blend_overlay, rgb2gray
+from utils import rgb2gray
 from utils import generate_boundaries
 
-from numba import cuda
-import cv2
 import os
 from parallel_stuff import Parallel
-import multiprocessing
 import sys
 
 def PredictionLoader(iterator):
@@ -40,65 +32,47 @@ def PredictionLoader(iterator):
 
     return key, pred, landmask, boundmask
 
-def load_images(self):
+
+# Should change the file path to be more robust, possibly reading a template file to find the images to grab
+def load_images(folder_path):
 
     try:
-        HH = np.asarray(Image.open(self.folder_path + "/imagery_HH_UW_4_by_4_average.tif")) 
-        HV = np.asarray(Image.open(self.folder_path + "/imagery_HV_UW_4_by_4_average.tif"))
+        HH = np.asarray(Image.open(folder_path + "/imagery_HH_UW_4_by_4_average.tif")) 
+        HV = np.asarray(Image.open(folder_path + "/imagery_HV_UW_4_by_4_average.tif"))
 
-        HH_better_contrast = np.asarray(Image.open(self.folder_path + "/enhanced_images/imagery_HH_UW_4_by_4_average.png"))
-        HV_better_contrast = np.asarray(Image.open(self.folder_path + "/enhanced_images/imagery_HV_UW_4_by_4_average.png"))
+        HH_better_contrast = np.asarray(Image.open(folder_path + "/enhanced_images/imagery_HH_UW_4_by_4_average.png"))
+        HV_better_contrast = np.asarray(Image.open(folder_path + "/enhanced_images/imagery_HV_UW_4_by_4_average.png"))
 
     except FileNotFoundError as e:
-        messagebox.showinfo("Error", f"The selected directory does not contain the required files. Please, select a valid directory.\n\n{e}", parent=self.master)
-        return 0
+        return e
 
-    self.img_ = {}
-    self.img_["HH"] = np.tile(HH[:,:,np.newaxis], (1,1,3))
-    self.img_["HV"] = np.tile(HV[:,:,np.newaxis], (1,1,3))
-    self.img_["(HH, HH, HV)"] = np.stack([HH, HH, HV], axis=-1)
-    self.img_["(HH, HV, HV)"] = np.stack([HH, HV, HV], axis=-1)
+    img_base = {}
+    img_base["HH"] = np.tile(HH[:,:,np.newaxis], (1,1,3))
+    img_base["HV"] = np.tile(HV[:,:,np.newaxis], (1,1,3))
+    img_base["(HH, HH, HV)"] = np.stack([HH, HH, HV], axis=-1)
+    img_base["(HH, HV, HV)"] = np.stack([HH, HV, HV], axis=-1)
 
-    self.img_Better_contrast = {}
-    self.img_Better_contrast["HH"] = np.tile(HH_better_contrast[:,:,np.newaxis], (1,1,3))
-    self.img_Better_contrast["HV"] = np.tile(HV_better_contrast[:,:,np.newaxis], (1,1,3))
-    self.img_Better_contrast["(HH, HH, HV)"] = np.stack([HH_better_contrast, HH_better_contrast, HV_better_contrast], axis=-1)
-    self.img_Better_contrast["(HH, HV, HV)"] = np.stack([HH_better_contrast, HV_better_contrast, HV_better_contrast], axis=-1)
+    img_better_contrast = {}
+    img_better_contrast["HH"] = np.tile(HH_better_contrast[:,:,np.newaxis], (1,1,3))
+    img_better_contrast["HV"] = np.tile(HV_better_contrast[:,:,np.newaxis], (1,1,3))
+    img_better_contrast["(HH, HH, HV)"] = np.stack([HH_better_contrast, HH_better_contrast, HV_better_contrast], axis=-1)
+    img_better_contrast["(HH, HV, HV)"] = np.stack([HH_better_contrast, HV_better_contrast, HV_better_contrast], axis=-1)
 
-    return 1
+    return (img_base, img_better_contrast)
 
-def load_prediction(self):
 
-    self.predictions = {}
-    self.landmasks = {}
-    self.boundmasks = {}
+def load_prediction(folder_path, filenames, lbl_source):
 
-    filenames = [self.folder_path + f for f in self.filenames]
-        
-    if len(self.lbl_source) > 1:
-        variables = Parallel(PredictionLoader, zip(self.lbl_source, filenames))
+    file_names = [folder_path + f for f in filenames]
+    
+    # Clean this up later possibly change to only use one path, no if else
+    if len(lbl_source) > 1:
+        variables = Parallel(PredictionLoader, zip(lbl_source, file_names))
     else:
-        variables = [PredictionLoader(zip(self.lbl_source, filenames))]
-        
-    # variables = [PredictionLoader(it) for it in zip(lbl_source, filenames)]
-        
-    # Reset label source radio buttons
-    for key in self.lbl_source_buttom.keys():
-        self.lbl_source_buttom[key].destroy()
-    self.lbl_source_buttom = {}
-    self.mode_var_lbl_source = None
-    self.mode_var_lbl_source_prev = None
+        variables = [PredictionLoader(zip(lbl_source, file_names))]
 
-    # Add available label sources
-    for i, (key, pred, landmask, boundmask) in enumerate(variables):
-        if pred is None: 
-            if key != 'Custom_Annotation':
-                messagebox.showinfo("Error", f"The selected scene does not contain prediction files for {key}.", parent=self.master)
-            continue
-        self.update_label_source_widgets(key, i)
-        self.predictions[key] = pred
-        self.landmasks[key] = landmask
-        self.boundmasks[key] = boundmask
+    return variables
+
 
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller."""
