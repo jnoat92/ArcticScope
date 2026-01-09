@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 class ViewState:
     zoom_factor: float = 1.0
     min_zoom: float = 0.1
-    max_zoom: float = 10.0
+    max_zoom: float = 20.0
     offset_x: float = 0.0
     offset_y: float = 0.0
 
@@ -21,8 +21,9 @@ class ViewState:
     pan_start_screen: tuple[int, int] = None
 
     # Selection zoom
+    zoom_select_mode: bool = False
     selection_rect_id: int = None
-    selection_start_screen: tuple[int, int] = None
+    selection_start_coord: tuple[int, int] = None
 
 
 # Data class that houses the currently loaded scene and everything tied to that data

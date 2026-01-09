@@ -10,14 +10,12 @@ import tkinter as tk
 from tkinter import Canvas, filedialog, messagebox
 from PIL import Image, ImageTk
 import numpy as np
-from skimage.measure import find_contours, label
 
-from skimage.morphology import binary_dilation, disk
 from ui.evaluation import EvaluationPanel
 from ui.annotation import AnnotationPanel
-from utils import blend_overlay_cuda, blend_overlay, rgb2gray
+from utils import rgb2gray
 from utils import generate_boundaries
-from core.io import PredictionLoader, load_images, load_prediction
+from core.io import load_images, load_prediction
 from core.segmentation import get_segment_contours
 from core.overlay import compose_overlay
 from core.render import crop_resize
@@ -50,23 +48,12 @@ class Visualizer(ctk.CTk):
         self.geometry(f"{window_width}x{window_height}")
 
         #%% Initial state
-        # Zoom state
-        self.zoom_factor = 1.0
-        self.min_zoom = 0.1
-        self.max_zoom = 20.0
-        self.offset_x = 0
-        self.offset_y = 0
-        self.drag_start = None
-        self.zoom_select_mode = False
-        self.selection_rect = None
 
         # Annotation state
         self.annotation_mode = None  # 'rectangle' or None
         self.selected_polygon = None   # Current canvas item being drawn
         self.reset_annotation()
 
-        # Pan state
-        self.select_start = None
 
         # ==================== LAYOUT: SIDEBAR (LEFT) + CANVAS (RIGHT)
 
@@ -393,10 +380,12 @@ class Visualizer(ctk.CTk):
 
     
     def refresh_view(self):
+
+        view = self.app_state.view
         # NEXT STEP: Group the returns
         self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, self.draw_x, self.draw_y = crop_resize(
                     self.pred, self.img, self.boundmask, self.landmask, 
-                    self.zoom_factor, self.offset_x, self.offset_y, 
+                    view.zoom_factor, view.offset_x, view.offset_y, 
                     self.canvas.winfo_width(), self.canvas.winfo_height())
         self.set_overlay()
         self.display_image()
@@ -557,11 +546,14 @@ class Visualizer(ctk.CTk):
     # Zoom handle
 
     def enable_zoom_selection(self):
-        self.zoom_select_mode = True
+        view = self.app_state.view
+        view.zoom_select_mode = True
         self.zoom_select_btn.configure(**self.zoom_btn_active_style)
         self.canvas.config(cursor="crosshair")
 
     def zoom_to_rectangle(self, x_min, y_min, x_max, y_max):
+
+        view = self.app_state.view
         rect_width = x_max - x_min
         rect_height = y_max - y_min
 
@@ -570,19 +562,21 @@ class Visualizer(ctk.CTk):
 
         zoom_x = canvas_width / rect_width
         zoom_y = canvas_height / rect_height
-        self.zoom_factor = min(zoom_x, zoom_y, self.max_zoom)
+        view.zoom_factor = min(zoom_x, zoom_y, view.max_zoom)
 
         center_x = x_min + rect_width / 2
         center_y = y_min + rect_height / 2
 
-        self.offset_x = int(canvas_width / 2 - center_x * self.zoom_factor)
-        self.offset_y = int(canvas_height / 2 - center_y * self.zoom_factor)
+        view.offset_x = int(canvas_width / 2 - center_x * view.zoom_factor)
+        view.offset_y = int(canvas_height / 2 - center_y * view.zoom_factor)
 
         self.refresh_view()
         if self.polygon_points_img_coor: 
             self.draw_polygon_on_canvas()
 
     def reset_zoom(self):
+
+        view = self.app_state.view
         # Get canvas dimensions
         canvas_width = self.canvas.winfo_width()
         canvas_height = self.canvas.winfo_height()
@@ -593,13 +587,13 @@ class Visualizer(ctk.CTk):
         # Compute scale to fit the whole image
         scale_x = canvas_width / img_width
         scale_y = canvas_height / img_height
-        self.zoom_factor = min(scale_x, scale_y)
+        view.zoom_factor = min(scale_x, scale_y)
 
         # Center image in canvas
-        new_width = int(img_width * self.zoom_factor)
-        new_height = int(img_height * self.zoom_factor)
-        self.offset_x = (canvas_width - new_width) // 2
-        self.offset_y = (canvas_height - new_height) // 2
+        new_width = int(img_width * view.zoom_factor)
+        new_height = int(img_height * view.zoom_factor)
+        view.offset_x = (canvas_width - new_width) // 2
+        view.offset_y = (canvas_height - new_height) // 2
 
         self.refresh_view()
         if self.polygon_points_img_coor: 
@@ -638,9 +632,10 @@ class Visualizer(ctk.CTk):
 
     def _on_mousewheel(self, event):
         """Handle mouse wheel events for zooming in and out."""
+        view = self.app_state.view
         scale = 1.1 if event.delta > 0 or event.num == 4 else 1 / 1.1
-        old_zoom = self.zoom_factor
-        new_zoom = max(self.min_zoom, min(self.max_zoom, old_zoom * scale))
+        old_zoom = view.zoom_factor
+        new_zoom = max(view.min_zoom, min(view.max_zoom, old_zoom * scale))
 
         if new_zoom == old_zoom:
             return  # no change
@@ -650,15 +645,15 @@ class Visualizer(ctk.CTk):
         canvas_y = self.canvas.canvasy(event.y)
 
         # Convert to image coordinates before zoom
-        img_x = (canvas_x - self.offset_x) / old_zoom
-        img_y = (canvas_y - self.offset_y) / old_zoom
+        img_x = (canvas_x - view.offset_x) / old_zoom
+        img_y = (canvas_y - view.offset_y) / old_zoom
 
         # Update zoom
-        self.zoom_factor = new_zoom
+        view.zoom_factor = new_zoom
 
         # Adjust offsets so the image pixel under the cursor stays at the same canvas position
-        self.offset_x = canvas_x - img_x * self.zoom_factor
-        self.offset_y = canvas_y - img_y * self.zoom_factor
+        view.offset_x = canvas_x - img_x * view.zoom_factor
+        view.offset_y = canvas_y - img_y * view.zoom_factor
 
         self.refresh_view()
         if self.polygon_points_img_coor: 
@@ -666,37 +661,40 @@ class Visualizer(ctk.CTk):
 
     def _on_left_click(self, event):
         """Handle left mouse click for zoom selection, panning, rectangle, or polygon drawing."""
-        if self.zoom_select_mode:
+        view = self.app_state.view
+        if view.zoom_select_mode:
             # Start selection
-            self.select_start = (event.x, event.y)
-            self.selection_rect = self.canvas.create_rectangle(event.x, event.y, event.x, event.y, outline='red', width=2)
+            view.selection_start_coord = (event.x, event.y)
+            view.selection_rect_id = self.canvas.create_rectangle(event.x, event.y, event.x, event.y, outline='red', width=2)
         elif self.annotation_mode == 'rectangle':
-                self.select_start = (event.x, event.y)
+                view.selection_start_coord = (event.x, event.y)
                 self.selected_polygon = self.canvas.create_rectangle(event.x, event.y, event.x, event.y, outline='yellow', width=2)
         elif self.annotation_mode == 'polygon':
                 self._add_polygon_point(event)
         else:
             # Start pan
-            self.drag_start = (event.x, event.y)
+            view.pan_start_screen = (event.x, event.y)
 
     def _on_left_drag(self, event):
         """Handle mouse drag for zoom selection, panning, or rectangle drawing."""
-        if self.zoom_select_mode and self.select_start:
+
+        view = self.app_state.view
+        if view.zoom_select_mode and view.selection_start_coord:
             # Update selection rectangle
-            x0, y0 = self.select_start
+            x0, y0 = view.selection_start_coord
             x1, y1 = event.x, event.y
-            self.canvas.coords(self.selection_rect, x0, y0, x1, y1)
-        elif self.annotation_mode == 'rectangle' and self.select_start:
-            x0, y0 = self.select_start
+            self.canvas.coords(view.selection_rect_id, x0, y0, x1, y1)
+        elif self.annotation_mode == 'rectangle' and view.selection_start_coord:
+            x0, y0 = view.selection_start_coord
             x1, y1 = event.x, event.y
             self.canvas.coords(self.selected_polygon, x0, y0, x1, y1)
-        elif self.drag_start:
+        elif view.pan_start_screen:
             # Pan mode
-            dx = event.x - self.drag_start[0]
-            dy = event.y - self.drag_start[1]
-            self.offset_x += dx
-            self.offset_y += dy
-            self.drag_start = (event.x, event.y)
+            dx = event.x - view.pan_start_screen[0]
+            dy = event.y - view.pan_start_screen[1]
+            view.offset_x += dx
+            view.offset_y += dy
+            view.pan_start_screen = (event.x, event.y)
             
             self.refresh_view()
             if self.polygon_points_img_coor: 
@@ -704,16 +702,18 @@ class Visualizer(ctk.CTk):
 
     def _on_left_release(self, event):
         """Handle left mouse button release to finalize zoom selection, rectangle, or polygon drawing."""	
-        if self.zoom_select_mode and self.select_start:
+        
+        view = self.app_state.view
+        if view.zoom_select_mode and view.selection_start_coord:
             # Complete selection and zoom
-            x0, y0 = self.select_start
+            x0, y0 = view.selection_start_coord
             x1, y1 = event.x, event.y
 
             # Reset variables
-            self.canvas.delete(self.selection_rect)
-            self.selection_rect = None
-            self.select_start = None
-            self.zoom_select_mode = False
+            self.canvas.delete(view.selection_rect_id)
+            view.selection_rect_id = None
+            view.selection_start_coord = None
+            view.zoom_select_mode = False
             self.zoom_select_btn.configure(**self.zoom_btn_default_style)
             self.canvas.config(cursor="")
 
@@ -726,10 +726,10 @@ class Visualizer(ctk.CTk):
             if x_max - x_min < 10 or y_max - y_min < 10:
                 return  # too small
 
-            img_x_min = int((x_min - self.offset_x) / self.zoom_factor)
-            img_y_min = int((y_min - self.offset_y) / self.zoom_factor)
-            img_x_max = int((x_max - self.offset_x) / self.zoom_factor)
-            img_y_max = int((y_max - self.offset_y) / self.zoom_factor)
+            img_x_min = int((x_min - view.offset_x) / view.zoom_factor)
+            img_y_min = int((y_min - view.offset_y) / view.zoom_factor)
+            img_x_max = int((x_max - view.offset_x) / view.zoom_factor)
+            img_y_max = int((y_max - view.offset_y) / view.zoom_factor)
 
             img_x_min = max(0, img_x_min)
             img_y_min = max(0, img_y_min)
@@ -738,21 +738,21 @@ class Visualizer(ctk.CTk):
 
             self.zoom_to_rectangle(img_x_min, img_y_min, img_x_max, img_y_max)
         
-        elif self.annotation_mode == 'rectangle' and self.select_start:
-            x0, y0 = self.select_start
+        elif self.annotation_mode == 'rectangle' and view.selection_start_coord:
+            x0, y0 = view.selection_start_coord
             x1, y1 = event.x, event.y
 
             polygon_points = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]  # Rectangle points
             for x, y in polygon_points:
-                self.polygon_points_img_coor.append((int((x - self.offset_x) / self.zoom_factor),
-                                                     int((y - self.offset_y) / self.zoom_factor)))
+                self.polygon_points_img_coor.append((int((x - view.offset_x) / view.zoom_factor),
+                                                     int((y - view.offset_y) / view.zoom_factor)))
             self._finish_polygon()
             
             # Reset variables
-            self.select_start = None
+            view.selection_start_coord = None
 
-        elif self.drag_start:
-            self.drag_start = None  # end pan
+        elif view.pan_start_screen:
+            view.pan_start_screen = None  # end pan
 
     def on_right_click(self, event):
         """Handle right-click to finish polygon drawing."""
@@ -761,6 +761,7 @@ class Visualizer(ctk.CTk):
 
     def on_double_click(self, event):
         """Handle double-click to select polygon."""
+        view = self.app_state.view
         if self.annotation_window.winfo_viewable():
 
             if (hasattr(self.annotation_panel, 'zoom_window') and 
@@ -772,8 +773,8 @@ class Visualizer(ctk.CTk):
             self.annotation_mode = 'selection'
             self.reset_annotation()
 
-            x = int((event.x - self.offset_x) / self.zoom_factor)
-            y = int((event.y - self.offset_y) / self.zoom_factor)
+            x = int((event.x - view.offset_x) / view.zoom_factor)
+            y = int((event.y - view.offset_y) / view.zoom_factor)
 
             h, w = self.pred.shape[:2]
             if not (0 <= x < w and 0 <= y < h):
@@ -902,15 +903,16 @@ class Visualizer(ctk.CTk):
 
 
     def _add_polygon_point(self, event):
+        view = self.app_state.view
         """Add a point to the polygon."""
         if self.annotation_mode == 'polygon':
-            self.polygon_points_img_coor.append((int((event.x - self.offset_x) / self.zoom_factor), 
-                                                 int((event.y - self.offset_y) / self.zoom_factor)))
+            self.polygon_points_img_coor.append((int((event.x - view.offset_x) / view.zoom_factor), 
+                                                 int((event.y - view.offset_y) / view.zoom_factor)))
             
             self.draw_polygon_on_canvas()
     
     def draw_polygon_on_canvas(self):
-
+        view = self.app_state.view
         if self.selected_polygon:
             if isinstance(self.selected_polygon, list):
                 for poly in self.selected_polygon:
@@ -927,8 +929,8 @@ class Visualizer(ctk.CTk):
         self.selected_polygon = []
         for p_img_coor in polygon_points_img_coor:
             polygon_points = [
-                (x * self.zoom_factor + self.offset_x, 
-                 y * self.zoom_factor + self.offset_y) for x, y in p_img_coor
+                (x * view.zoom_factor + view.offset_x, 
+                 y * view.zoom_factor + view.offset_y) for x, y in p_img_coor
             ]
 
             self.selected_polygon.append(self.draw_single_polygon_on_canvas(polygon_points))
