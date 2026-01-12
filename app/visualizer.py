@@ -17,7 +17,7 @@ from ui.evaluation import EvaluationPanel
 from ui.annotation import AnnotationPanel
 from utils import rgb2gray
 from utils import generate_boundaries
-from core.io import load_images, load_prediction
+from core.io import load_images, load_prediction, load_existing_annotation
 from core.segmentation import get_segment_contours
 from core.overlay import compose_overlay
 from core.render import crop_resize
@@ -334,7 +334,14 @@ class Visualizer(ctk.CTk):
         scene.boundmasks = {}
 
         variables = load_prediction(scene.folder_path, scene.filenames, scene.lbl_sources)
+        existing_anno = load_existing_annotation(self.scene_name)
+
+        if existing_anno is not None:
+            variables.append(existing_anno)
+            scene.lbl_sources.append("Custom_Annotation")
+            scene.filenames.append("{}/{}/{}".format(scene.lbl_sources[-1], self.scene_name, "custom_annotation.png"))
         
+        print(scene.filenames)
         # variables = [PredictionLoader(it) for it in zip(lbl_source, filenames)]
         
         # Reset label source radio buttons
@@ -428,7 +435,10 @@ class Visualizer(ctk.CTk):
             else:
                 self.img_, self.img_Better_contrast = images
             
-            
+            if "Custom_Annotation" in scene.lbl_sources:
+                scene.filenames.pop()
+                scene.lbl_sources.pop()
+
             self.choose_image()
             self.load_pred()
             if not self.Choose_lbl_source(plot=False):
@@ -855,28 +865,6 @@ class Visualizer(ctk.CTk):
             elif result:
                 if not self.annotation_panel.save_annotation():
                     return  0   # Failed to save → don't close
-        
-        # Remove custom annotation from seg sources
-        if "Custom_Annotation" in scene.lbl_sources:
-
-            for i in range(len(scene.filenames)):
-                if "Custom_Annotation" in scene.filenames[i]:
-                    scene.filenames.pop(i)
-
-            for i in range(len(scene.lbl_sources)):
-                if scene.lbl_sources[i] == 'Custom_Annotation':
-                    scene.lbl_sources.pop(i)
-
-            for key in self.lbl_source_btn.keys():
-                self.lbl_source_btn[key].destroy()
-            self.lbl_source_btn = {}
-            self.mode_var_lbl_source = None
-            self.mode_var_lbl_source_prev = None
-
-            for i, lbl_s in enumerate(scene.lbl_sources):
-                self.update_label_source_widgets(lbl_s, i)
-            
-            self.Choose_lbl_source()
 
         self.reset_annotation()
         self.annotation_panel.unsaved_changes = False
@@ -1038,13 +1026,16 @@ class Visualizer(ctk.CTk):
                                                              value=key, command=self.Choose_lbl_source)
             self.lbl_source_btn[key].grid(row=len(scene.lbl_sources), column=0, sticky="w", pady=(10, 10))
             
-            # Duplicate scene for new custom annotation scene
+        else:
+            self.lbl_source_btn[key].configure(text=f"* {key}")
+
+        # Duplicate scene for new/updated custom annotation scene
+        if key != scene.active_source:
             scene.predictions[key] = scene.predictions[scene.active_source].copy()
             scene.landmasks[key] = scene.landmasks[scene.active_source].copy()
             scene.boundmasks[key] = scene.boundmasks[scene.active_source].copy()
             scene.active_source = key
-        else:
-            self.lbl_source_btn[key].configure(text=f"* {key}")
+            
         self.annotation_panel.unsaved_changes = True
         self.annotation_panel.save_button.configure(state=ctk.NORMAL)
 
