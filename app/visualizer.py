@@ -15,8 +15,7 @@ import os
 
 from ui.evaluation import EvaluationPanel
 from ui.annotation import AnnotationPanel
-from utils import rgb2gray
-from utils import generate_boundaries
+from utils import rgb2gray, generate_boundaries
 from core.io import load_images, load_prediction, load_existing_annotation
 from core.segmentation import get_segment_contours
 from core.overlay import compose_overlay
@@ -147,6 +146,21 @@ class Visualizer(ctk.CTk):
         self.default_hover_color = self.better_contrast_toggle_btn.cget("hover_color")
         self.default_text_color = self.better_contrast_toggle_btn.cget("text_color")
 
+        self.brightness_slider_value = 0  # Initial value
+        ctk.CTkLabel(self.select_image_frame, text="Brightness").grid(
+            row=5, column=0, sticky="e", padx=5, pady=5
+        )
+        self.brightness_slider = ctk.CTkSlider(
+            self.select_image_frame,
+            from_=-100,
+            to=100,
+            number_of_steps=20,
+            width=100,
+            command=self.brightness_slider_handle
+        )
+        self.brightness_slider.set(self.brightness_slider_value)  # Set initial value
+        self.brightness_slider.grid(row=5, column=1, pady=5, padx=5, sticky="w")
+
         # Opacity + segmentation controls in same block
         self.segmentation_frame = ctk.CTkFrame(self.control_frame)
         self.segmentation_frame.grid(row=1, column=0, padx=5, pady=5, sticky="nwe")
@@ -155,16 +169,16 @@ class Visualizer(ctk.CTk):
         ctk.CTkLabel(self.segmentation_frame, text="Opacity").grid(
             row=0, column=0, sticky="e", padx=5, pady=5
         )
-        self.slider = ctk.CTkSlider(
+        self.opacity_slider = ctk.CTkSlider(
             self.segmentation_frame,
             from_=0,
             to=100,
             number_of_steps=20,
             width=100,
-            command=self.opacity_slider
+            command=self.opacity_slider_handle
         )
-        self.slider.set(self.opacity_slider_value)  # Set initial value
-        self.slider.grid(row=0, column=1, pady=5, padx=5, sticky="w")
+        self.opacity_slider.set(self.opacity_slider_value)  # Set initial value
+        self.opacity_slider.grid(row=0, column=1, pady=5, padx=5, sticky="w")
 
         # Classes ON/OFF
         ctk.CTkLabel(self.segmentation_frame, text="Ice/Water Labels").grid(
@@ -328,13 +342,14 @@ class Visualizer(ctk.CTk):
     def load_pred(self):
 
         scene = self.app_state.scene
+        anno = self.app_state.anno
 
         scene.predictions = {}
         scene.landmasks = {}
         scene.boundmasks = {}
 
         variables = load_prediction(scene.folder_path, scene.filenames, scene.lbl_sources)
-        existing_anno = load_existing_annotation(self.scene_name)
+        existing_anno, anno.annotation_notes = load_existing_annotation(self.scene_name)
 
         if existing_anno is not None:
             variables.append(existing_anno)
@@ -373,8 +388,10 @@ class Visualizer(ctk.CTk):
         display = self.app_state.display
         if self.better_contrast_toggle_state:
             scene.img = self.img_Better_contrast[display.channel_mode]
+            scene.orig_img = self.img_Better_contrast[display.channel_mode]
         else:
             scene.img = self.img_[display.channel_mode]
+            scene.orig_img = self.img_[display.channel_mode]
 
     def display_image(self):
         image = self.overlay if self.app_state.overlay.show_overlay else self.img_resized.astype('uint8')
@@ -389,10 +406,11 @@ class Visualizer(ctk.CTk):
 
         view = self.app_state.view
         scene = self.app_state.scene
+        display = self.app_state.display
         # NEXT STEP: Group the returns
         self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, self.draw_x, self.draw_y = crop_resize(
                     scene.predictions[scene.active_source], scene.img, scene.boundmasks[scene.active_source], scene.landmasks[scene.active_source], 
-                    view.zoom_factor, view.offset_x, view.offset_y, 
+                    view.zoom_factor, view.offset_x, view.offset_y, display.brightness,
                     self.canvas.winfo_width(), self.canvas.winfo_height())
         self.set_overlay()
         self.display_image()
@@ -506,10 +524,23 @@ class Visualizer(ctk.CTk):
             if self.annotation_panel.zoom_window.winfo_viewable():            
                 self.annotation_panel.update_zoomed_display()
 
+    # Image handle
+    def brightness_slider_handle(self,val):
+        self.app_state.display.brightness = float(val)/100
+        self.refresh_view()
+
+        if self.app_state.anno.polygon_points_img_coor: 
+            self.draw_polygon_on_canvas()
+
+        if (hasattr(self.annotation_panel, 'zoom_window') and 
+            self.annotation_panel.zoom_window is not None and 
+            self.annotation_panel.zoom_window.winfo_exists()):
+            if self.annotation_panel.zoom_window.winfo_viewable():            
+                self.annotation_panel.update_zoomed_display()
 
     # Segmentation handle
 
-    def opacity_slider(self, val):
+    def opacity_slider_handle(self, val):
         # self.slider_label.config(text=f"{float(val):.2f}")
         self.app_state.overlay.alpha = float(val)/100
         self.set_overlay()
@@ -838,8 +869,12 @@ class Visualizer(ctk.CTk):
         if not eva_flag:
             return
         
-        self.annotation_window.deiconify()
-        self.annotation_window.focus_force()
+        annotation_loaded = self.check_existing_annotation()
+
+        if annotation_loaded:
+            self.annotation_panel.insert_existing_notes(self.app_state.anno.annotation_notes)
+            self.annotation_window.deiconify()
+            self.annotation_window.focus_force()
 
     def close_evaluation_panel(self):
         if self.evaluation_panel.unsaved_changes:
@@ -994,7 +1029,7 @@ class Visualizer(ctk.CTk):
         anno.multiple_polygons = False
 
 
-    def annotate_class(self, class_color):
+    def annotate_class(self, class_color=[0, 0, 0]):
         scene = self.app_state.scene
         anno = self.app_state.anno
 
@@ -1013,24 +1048,13 @@ class Visualizer(ctk.CTk):
         if (scene.predictions[scene.active_source][anno.selected_polygon_area_idx] == class_color).all():
             self.reset_annotation()
             return
-            
+        
         key = "Custom_Annotation"
 
-        # Duplicate scene for new/updated custom annotation scene
-        if key != scene.active_source:
-            if key in self.lbl_source_btn.keys():
-                result = messagebox.askyesnocancel("Existing annotation", "You have an existing custom annotation. Do you want to overwrite it?")
-                if result is None:
-                    #self.reset_annotation()
-                    return  # Don't overwrite
-                elif not result:
-                    self.reset_annotation()
-                    return  # Don't overwrite
-
-            scene.predictions[key] = scene.predictions[scene.active_source].copy()
-            scene.landmasks[key] = scene.landmasks[scene.active_source].copy()
-            scene.boundmasks[key] = scene.boundmasks[scene.active_source].copy()
-            scene.active_source = key
+        scene.predictions[key] = scene.predictions[scene.active_source].copy()
+        scene.landmasks[key] = scene.landmasks[scene.active_source].copy()
+        scene.boundmasks[key] = scene.boundmasks[scene.active_source].copy()
+        scene.active_source = key
 
         if key not in self.lbl_source_btn.keys():
             # Add custom annotation as and additional label source
@@ -1058,13 +1082,39 @@ class Visualizer(ctk.CTk):
         img_x_min = max(0, img_x_min-20)
         img_x_max = min(scene.predictions[scene.active_source].shape[1], img_x_max+20)
         scene.boundmasks[scene.active_source][img_y_min: img_y_max, 
-                       img_x_min: img_x_max] = generate_boundaries(rgb2gray(scene.predictions[scene.active_source][img_y_min: img_y_max, 
-                                                                                      img_x_min: img_x_max]))
+                    img_x_min: img_x_max] = generate_boundaries(rgb2gray(scene.predictions[scene.active_source][img_y_min: img_y_max, 
+                                                                                    img_x_min: img_x_max]))
 
         self.refresh_view()
 
         # Reset variables
         self.reset_annotation()
+
+    def check_existing_annotation(self):
+        scene = self.app_state.scene
+        key = "Custom_Annotation"
+
+        # Duplicate scene for new/updated custom annotation scene
+        if key != scene.active_source and key in self.lbl_source_btn.keys():
+            result = messagebox.askyesnocancel("Existing annotation", "You have an existing custom annotation. Do you want to use it?")
+            if result is None:
+                self.reset_annotation()
+                return 0 # Cancel
+            elif not result:  # No, create new annotation
+                new_annotation = messagebox.askyesno("Overwrite annotation", "Do you want to overwrite the existing custom annotation with {}? (current overlay)".format(scene.active_source))
+                if new_annotation:
+                    scene.predictions[key] = scene.predictions[scene.active_source].copy()
+                    scene.landmasks[key] = scene.landmasks[scene.active_source].copy()
+                    scene.boundmasks[key] = scene.boundmasks[scene.active_source].copy()
+                    self.lbl_source_btn[key].configure(text=f"* {key}")
+                else:
+                    self.reset_annotation()
+                    return 0 # Cancel
+
+            scene.active_source = key
+            self.mode_var_lbl_source.set(key)
+            self.refresh_view()
+        return 1
 
     def label_water(self):
         self.annotate_class([0, 255, 255])

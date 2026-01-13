@@ -35,6 +35,9 @@ class SceneState:
     img: np.ndarray = None
     img_name: str = ""
 
+    # Store original image
+    orig_img: np.ndarray = None
+
     predictions: dict[str, np.ndarray] = field(default_factory=dict)
     landmasks: dict[str, np.ndarray] = field(default_factory=dict)
     boundmasks: dict[str, np.ndarray] = field(default_factory=dict)
@@ -52,7 +55,7 @@ class SceneState:
 # Data class that houses values that affect the base image pixels before overlay
 @dataclass(slots=True)
 class DisplaySettings:
-    brightness: float = 1.0 # Placeholder for later
+    brightness: float = 0.0
     contrast: float = 1.0 # Placeholder for later
     gamma: float = 1.0 # Placeholder for later
     clip: bool = True
@@ -84,6 +87,9 @@ class AnnotationState:
     multiple_polygons: bool = False
 
     unsaved_changes: bool = False
+
+    # Annotation text storage
+    annotation_notes: str = ""
 
     # Zoom window state
     zoom_window_open: bool = False

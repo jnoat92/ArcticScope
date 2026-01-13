@@ -57,3 +57,25 @@ def generate_boundaries(lbl):
         contours = np.uint16(contours)
         boundmask[contours[:,0], contours[:,1]] = True
     return boundmask
+
+@njit(parallel=True)
+def apply_brightness_contrast(image, brightness=0.0, clip=True):
+    # Adjust brightness and contrast
+    h, w, c = image.shape
+    adjusted = np.empty((h, w, c), dtype=np.float32)
+
+    for y in prange(h):
+        for x in range(w):
+            for ch in range(c):
+                adjusted[y, x, ch] = image[y, x, ch] + brightness * 128
+
+    if clip:
+        for y in prange(h):
+            for x in range(w):
+                for ch in range(c):
+                    if adjusted[y, x, ch] < 0:
+                        adjusted[y, x, ch] = 0
+                    elif adjusted[y, x, ch] > 255:
+                        adjusted[y, x, ch] = 255
+
+    return adjusted.astype(np.uint8)

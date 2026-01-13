@@ -86,11 +86,16 @@ def load_existing_annotation(scene_name):
     folder_name = "Custom_Annotation"
     folder_path = os.path.join(folder_name, scene_name)
     file_path = folder_path + "/custom_annotation.png"
+    notes_file_path = folder_path + "/custom_annotation_notes.txt"
     if os.path.exists(folder_path) and os.path.exists(file_path):
         #print(folder_path)
         annotation_file = os.path.join(folder_path, "custom_annotation.png")
         custom_anno_variable = PredictionLoader(("Custom_Annotation", annotation_file))
-        return custom_anno_variable
+        if os.path.exists(notes_file_path):
+            with open(notes_file_path, 'r') as f:
+                notes = f.read()
+                print(notes)
+        return custom_anno_variable, notes
     else:
-        return None
+        return None, ""
         

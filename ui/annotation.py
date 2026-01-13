@@ -4,6 +4,7 @@ Annotation panel setup and functions
 Last modified: Jan 2026
 '''
 
+from email.mime import text
 import customtkinter as ctk
 from tkinter import messagebox
 import json
@@ -47,10 +48,17 @@ class AnnotationPanel(ctk.CTkFrame):
                       command=command_parent.label_water).grid(row=1, column=1, padx=5, pady=5)
         ctk.CTkButton(self.labels_frame, text="reset from", 
                       width=20, command=self.reset_label_from).grid(row=1, column=2, padx=5, pady=5)
+        
+        # Notes frame
+        self.notes_frame = ctk.CTkFrame(self)
+        self.notes_frame.grid(row=0, column=2, padx=5, pady=5)
+        ctk.CTkLabel(self.notes_frame, text="Notes:").grid(row=0, column=0, sticky="w", padx=10)
+        self.notes_text = ctk.CTkTextbox(self.notes_frame, width=300, height=50)
+        self.notes_text.grid(row=1, column=0, pady=(0, 5), padx=10)
 
         # Saving annotations
         self.saving_frame = ctk.CTkFrame(self)
-        self.saving_frame.grid(row=1, column=0, columnspan=2, padx=5, pady=5)
+        self.saving_frame.grid(row=1, column=0, columnspan=3, padx=5, pady=5)
         self.save_button = ctk.CTkButton(self.saving_frame, text="Save Annotation", 
                                          width=20, command=self.save_annotation)
         self.save_button.grid(row=0, column=0, padx=5, pady=5)
@@ -247,17 +255,23 @@ class AnnotationPanel(ctk.CTkFrame):
     def save_annotation(self):
         scene = self.app_state.scene
 
+        notes = self.notes_text.get("1.0", "end").strip()
+
         key = "Custom_Annotation"
         if key not in scene.predictions.keys():
             messagebox.showerror("Error", f"There is no {key} to save.")
             return False
         
         file_path = scene.filenames[list(scene.predictions).index(key)]
+        notes_file_path = os.path.splitext(file_path)[0] + "_notes.txt"
         os.makedirs(os.path.split(file_path)[0], exist_ok=True)
         img = scene.predictions[key].copy()
         img[(img == [0, 255, 255]).all(axis=2)] = [0, 0, 128]
         img[(img == [255, 130, 0]).all(axis=2)] = [128, 0, 0]
         Image.fromarray(img).save(file_path)
+
+        with open(notes_file_path, 'w') as f:
+            f.write(notes)
 
         # mark as saved
         self.command_parent.lbl_source_btn[key].configure(text=key)
@@ -266,6 +280,9 @@ class AnnotationPanel(ctk.CTkFrame):
 
         messagebox.showinfo("Saved", f"Evaluation saved to {file_path}", parent=self.master)
         return True
+
+    def insert_existing_notes(self, notes):
+        self.notes_text.insert("1.0", f"{notes}")
 
 
     def draw_rectangle(self):
