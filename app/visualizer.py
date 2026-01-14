@@ -336,7 +336,7 @@ class Visualizer(ctk.CTk):
                                                                 text=lbl_source, 
                                                                 variable=self.mode_var_lbl_source,
                                                                 value=lbl_source, 
-                                                                command=self.Choose_lbl_source)
+                                                                command=self.choose_lbl_source)
         self.lbl_source_btn[lbl_source].grid(row=i+1, column=0, sticky="w", pady=(10, 10))
 
     def load_pred(self):
@@ -349,12 +349,13 @@ class Visualizer(ctk.CTk):
         scene.boundmasks = {}
 
         variables = load_prediction(scene.folder_path, scene.filenames, scene.lbl_sources)
-        existing_anno, anno.annotation_notes = load_existing_annotation(self.scene_name)
+        existing_anno, anno.annotation_notes = load_existing_annotation(scene.scene_name)
 
         if existing_anno is not None:
             variables.append(existing_anno)
             scene.lbl_sources.append("Custom_Annotation")
-            scene.filenames.append("{}/{}/{}".format(scene.lbl_sources[-1], self.scene_name, "custom_annotation.png"))
+            scene.filenames.append("{}/{}/{}".format(scene.lbl_sources[-1], scene.scene_name, "custom_annotation.png"))
+        self.annotation_panel.clear_notes()
         
         # variables = [PredictionLoader(it) for it in zip(lbl_source, filenames)]
         
@@ -375,6 +376,15 @@ class Visualizer(ctk.CTk):
             scene.predictions[key] = pred
             scene.landmasks[key] = landmask
             scene.boundmasks[key] = boundmask
+
+        custom_anno = "Custom_Annotation"
+        if custom_anno in scene.lbl_sources:
+            result = messagebox.askyesno("Custom Annotation Found",
+                                         "An existing custom annotation was found for this scene. Do you want to view it?",
+                                         parent=self.master)
+            if result:
+                scene.active_source = custom_anno
+                self.mode_var_lbl_source.set(custom_anno)
 
 
     # Display handle
@@ -439,9 +449,9 @@ class Visualizer(ctk.CTk):
             if scene.folder_path == prev_folder_path:
                 return
 
-            self.scene_name = scene.folder_path.split('/')[-1]
+            scene.scene_name = scene.folder_path.split('/')[-1]
 
-            self.title(f"Scene {self.scene_name}-{display.channel_mode}")
+            self.title(f"Scene {scene.scene_name}-{display.channel_mode}")
 
             images = load_images(scene.folder_path)
             
@@ -452,13 +462,14 @@ class Visualizer(ctk.CTk):
             else:
                 self.img_, self.img_Better_contrast = images
             
+            # Handle switching scenes with existing custom annotation to one without
             if "Custom_Annotation" in scene.lbl_sources:
                 scene.filenames.pop()
                 scene.lbl_sources.pop()
 
             self.choose_image()
             self.load_pred()
-            if not self.Choose_lbl_source(plot=False):
+            if not self.choose_lbl_source(plot=False):
                 scene.folder_path = ''
                 return
             self.update_idletasks()
@@ -506,11 +517,12 @@ class Visualizer(ctk.CTk):
         
     def HH_HV(self, get_channel=True):
         display = self.app_state.display
+        scene = self.app_state.scene
 
         if get_channel:
             display.channel_mode = "HV" if self.HH_HV_switch.get() else "HH"
 
-        self.title(f"Scene {self.scene_name}-{display.channel_mode}")
+        self.title(f"Scene {scene.scene_name}-{display.channel_mode}")
         self.choose_image()
 
         self.refresh_view()
@@ -648,7 +660,7 @@ class Visualizer(ctk.CTk):
 
     # Label source handle
 
-    def Choose_lbl_source(self, plot=True):
+    def choose_lbl_source(self, plot=True):
 
         scene = self.app_state.scene
 
@@ -856,8 +868,8 @@ class Visualizer(ctk.CTk):
         if not ann_flag:
             return
         
-        if self.evaluation_panel.scene_name != self.scene_name:
-            self.evaluation_panel.set_scene_name(self.scene_name)
+        if self.evaluation_panel.scene_name != self.app_state.scene.scene_name:
+            self.evaluation_panel.set_scene_name(self.app_state.scene.scene_name)
         
         self.evaluation_window.deiconify()
         self.evaluation_window.focus_force()
@@ -1059,11 +1071,11 @@ class Visualizer(ctk.CTk):
         if key not in self.lbl_source_btn.keys():
             # Add custom annotation as and additional label source
             scene.lbl_sources.append(key)
-            scene.filenames.append("{}/{}/{}".format(scene.lbl_sources[-1], self.scene_name, "custom_annotation.png"))
+            scene.filenames.append("{}/{}/{}".format(scene.lbl_sources[-1], scene.scene_name, "custom_annotation.png"))
             self.lbl_source_btn[key] = ctk.CTkRadioButton(self.lbl_source_frame, 
                                                                 text=f"* {key}", 
                                                                 variable=self.mode_var_lbl_source, 
-                                                                value=key, command=self.Choose_lbl_source)
+                                                                value=key, command=self.choose_lbl_source)
             self.lbl_source_btn[key].grid(row=len(scene.lbl_sources), column=0, sticky="w", pady=(10, 10))
             
         else:
@@ -1100,16 +1112,8 @@ class Visualizer(ctk.CTk):
             if result is None:
                 self.reset_annotation()
                 return 0 # Cancel
-            elif not result:  # No, create new annotation
-                new_annotation = messagebox.askyesno("Overwrite annotation", "Do you want to overwrite the existing custom annotation with {}? (current overlay)".format(scene.active_source))
-                if new_annotation:
-                    scene.predictions[key] = scene.predictions[scene.active_source].copy()
-                    scene.landmasks[key] = scene.landmasks[scene.active_source].copy()
-                    scene.boundmasks[key] = scene.boundmasks[scene.active_source].copy()
-                    self.lbl_source_btn[key].configure(text=f"* {key}")
-                else:
-                    self.reset_annotation()
-                    return 0 # Cancel
+            elif not result:  # No, create new annotation from choice of overlay
+                self.annotation_panel.reset_label_from()
 
             scene.active_source = key
             self.mode_var_lbl_source.set(key)

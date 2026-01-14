@@ -27,6 +27,7 @@ class ViewState:
 # Data class that houses the currently loaded scene and everything tied to that data
 @dataclass(slots=True)
 class SceneState:
+    scene_name: str = ""
     folder_path: str = ""
     filenames: list[str] = field(default_factory=list)
     current_index: int = 0

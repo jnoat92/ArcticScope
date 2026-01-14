@@ -12,6 +12,7 @@ from utils import rgb2gray
 from utils import generate_boundaries
 
 import os
+import json
 from parallel_stuff import Parallel
 import sys
 
@@ -82,20 +83,26 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+# Future combine with loading evaluation?
 def load_existing_annotation(scene_name):
     folder_name = "Custom_Annotation"
     folder_path = os.path.join(folder_name, scene_name)
     file_path = folder_path + "/custom_annotation.png"
-    notes_file_path = folder_path + "/custom_annotation_notes.txt"
+    notes_file_path = folder_name + "/annotation_notes.json"
+    notes = ""
     if os.path.exists(folder_path) and os.path.exists(file_path):
         #print(folder_path)
         annotation_file = os.path.join(folder_path, "custom_annotation.png")
         custom_anno_variable = PredictionLoader(("Custom_Annotation", annotation_file))
         if os.path.exists(notes_file_path):
             with open(notes_file_path, 'r') as f:
-                notes = f.read()
-                print(notes)
+                try:
+                    existing_notes = json.load(f)
+                    if scene_name in existing_notes:
+                        notes = existing_notes[scene_name].get("notes", "").strip()
+                except json.JSONDecodeError:
+                    pass 
         return custom_anno_variable, notes
     else:
-        return None, ""
+        return None, notes
         

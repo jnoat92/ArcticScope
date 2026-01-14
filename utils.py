@@ -59,8 +59,8 @@ def generate_boundaries(lbl):
     return boundmask
 
 @njit(parallel=True)
-def apply_brightness_contrast(image, brightness=0.0, clip=True):
-    # Adjust brightness and contrast
+def apply_brightness(image, brightness=0.0, clip=True):
+    # Adjust brightness
     h, w, c = image.shape
     adjusted = np.empty((h, w, c), dtype=np.float32)
 

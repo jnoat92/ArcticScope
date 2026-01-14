@@ -6,7 +6,7 @@ Last modified: Jan 2026
 import numpy as np
 from skimage.morphology import binary_dilation
 import cv2
-from utils import apply_brightness_contrast
+from utils import apply_brightness
 
 # Possibly group pred, img, boundmask, landmask
 def crop_resize(pred, img, boundmask, landmask, zoom_factor, offset_x, offset_y, brightness,canvas_width, canvas_height):
@@ -48,7 +48,7 @@ def crop_resize(pred, img, boundmask, landmask, zoom_factor, offset_x, offset_y,
     draw_x = int(offset_x + view_left * zoom_factor)
     draw_y = int(offset_y + view_top * zoom_factor)
 
-    img_resized = apply_brightness_contrast(img_resized, brightness, clip=True)
+    img_resized = apply_brightness(img_resized, brightness, clip=True)
 
     return pred_resized, img_resized, boundmask_resized, landmask_resized, draw_x, draw_y
 

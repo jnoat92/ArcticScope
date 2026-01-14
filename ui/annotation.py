@@ -64,7 +64,7 @@ class AnnotationPanel(ctk.CTkFrame):
         self.save_button.grid(row=0, column=0, padx=5, pady=5)
 
         self.unsaved_changes = False
-        self.save_button.configure(state=ctk.DISABLED)
+        self.save_button.configure(state=ctk.NORMAL)
 
 
     def reset_label_from(self):
@@ -82,9 +82,9 @@ class AnnotationPanel(ctk.CTkFrame):
                     return
                 else:
                     self.command_parent._finish_polygon()
-            else:
-                messagebox.showinfo("Error", "Please select a polygon area first.", parent=self.master)
-                return
+            else: # Assume they want to reset the whole image
+                #messagebox.showinfo("Error", "Please select a polygon area first.", parent=self.master)
+                anno.selected_polygon_window = (0, scene.img.shape[0], 0, scene.img.shape[1])
 
         # Create new window
         self.zoom_window = ctk.CTkToplevel(self)
@@ -154,7 +154,7 @@ class AnnotationPanel(ctk.CTkFrame):
         landmask_crop = scene.landmasks[key][img_y_min:img_y_max, img_x_min:img_x_max]
 
         # Resize to fit canvas
-        # self.zoom_window.update_idletasks()  # Let Tk finish geometry calculation
+        self.zoom_window.update_idletasks()  # Let Tk finish geometry calculation
         canvas_width = self.zoom_canvas.winfo_width()
         canvas_height = self.zoom_canvas.winfo_height()
         if canvas_width <= 1 or canvas_height <= 1:  # Canvas not yet realized
@@ -190,21 +190,23 @@ class AnnotationPanel(ctk.CTkFrame):
         x_offset = (canvas_width - zoomed_width) // 2
         y_offset = (canvas_height - zoomed_height) // 2
 
-        # Draw polygon
-        if not anno.multiple_polygons:
-            polygon_points_img_coor = [anno.polygon_points_img_coor]
-        else:
-            polygon_points_img_coor = anno.polygon_points_img_coor
-        
-        for p_img_coor in polygon_points_img_coor:
-            polygon_points = [
-                ((x - img_x_min) * zoom_factor + x_offset,
-                 (y - img_y_min) * zoom_factor + y_offset)
-                for x, y in p_img_coor
-            ]
-            self.zoom_canvas.create_polygon(
-                polygon_points, outline='yellow', width=1, fill=''
-            )
+        if anno.polygon_points_img_coor:
+            # Draw polygon
+            if not anno.multiple_polygons:
+                polygon_points_img_coor = [anno.polygon_points_img_coor]
+            else:
+                polygon_points_img_coor = anno.polygon_points_img_coor
+            
+            for p_img_coor in polygon_points_img_coor:
+                polygon_points = [
+                    ((x - img_x_min) * zoom_factor + x_offset,
+                    (y - img_y_min) * zoom_factor + y_offset)
+                    for x, y in p_img_coor
+                ]
+                self.zoom_canvas.create_polygon(
+                    polygon_points, outline='yellow', width=1, fill=''
+                )
+        # If empty: No polygon to draw, assume whole picture reset
 
 
     def apply_label_source(self):
@@ -250,10 +252,24 @@ class AnnotationPanel(ctk.CTkFrame):
 
             self.command_parent.lbl_source_btn[main_key].configure(text=f"* {main_key}")
             self.unsaved_changes = True
-            self.save_button.configure(state=ctk.NORMAL)
+            #self.save_button.configure(state=ctk.NORMAL)
+        else:
+            # Whole area reset
+            scene.predictions[scene.active_source] = scene.predictions[key].copy()
+            scene.landmasks[scene.active_source] = scene.landmasks[key].copy()
+            scene.boundmasks[scene.active_source] = scene.boundmasks[key].copy()
+            self.command_parent.refresh_view()
+
+            # Close the zoom window
+            self.zoom_window.destroy()
+
+            self.command_parent.lbl_source_btn[scene.active_source].configure(text=f"* {scene.active_source}")
+            self.unsaved_changes = True
+            #self.save_button.configure(state=ctk.NORMAL)
 
     def save_annotation(self):
         scene = self.app_state.scene
+        anno = self.app_state.anno
 
         notes = self.notes_text.get("1.0", "end").strip()
 
@@ -263,26 +279,55 @@ class AnnotationPanel(ctk.CTkFrame):
             return False
         
         file_path = scene.filenames[list(scene.predictions).index(key)]
-        notes_file_path = os.path.splitext(file_path)[0] + "_notes.txt"
         os.makedirs(os.path.split(file_path)[0], exist_ok=True)
         img = scene.predictions[key].copy()
         img[(img == [0, 255, 255]).all(axis=2)] = [0, 0, 128]
         img[(img == [255, 130, 0]).all(axis=2)] = [128, 0, 0]
         Image.fromarray(img).save(file_path)
 
+        new_note = {
+            scene.scene_name: {
+                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "notes": notes
+            }
+        }
+        
+        notes_file_folder = os.path.split(os.path.split(file_path)[0])[0]
+        notes_file_path = os.path.join(notes_file_folder, "annotation_notes.json")
+
+        if os.path.exists(notes_file_path):
+            with open(notes_file_path, 'r') as f:
+                try:
+                    existing_notes = json.load(f)
+                except json.JSONDecodeError:
+                    existing_notes = {}
+        else:
+            existing_notes = {}
+        
+        if scene.scene_name in existing_notes:
+            existing_notes[scene.scene_name] = new_note[scene.scene_name]
+        else:
+            existing_notes.update(new_note)
+            
         with open(notes_file_path, 'w') as f:
-            f.write(notes)
+            json.dump(existing_notes, f, indent=4)
+
+        anno.annotation_notes = notes
 
         # mark as saved
         self.command_parent.lbl_source_btn[key].configure(text=key)
         self.unsaved_changes = False
-        self.save_button.configure(state=ctk.DISABLED)
+        #self.save_button.configure(state=ctk.DISABLED)
 
         messagebox.showinfo("Saved", f"Evaluation saved to {file_path}", parent=self.master)
         return True
 
     def insert_existing_notes(self, notes):
-        self.notes_text.insert("1.0", f"{notes}")
+        if self.notes_text.get("1.0", "end").strip() == "":
+            self.notes_text.insert("1.0", f"{notes}")
+
+    def clear_notes(self):
+        self.notes_text.delete("1.0", "end")
 
 
     def draw_rectangle(self):
