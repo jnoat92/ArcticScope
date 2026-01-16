@@ -7,6 +7,7 @@ import numpy as np
 from skimage.morphology import binary_dilation
 import cv2
 from utils import apply_brightness
+from core.contrast_handler import enhance_image, get_cutoff_from_cdf
 
 # Possibly group pred, img, boundmask, landmask
 def crop_resize(pred, img, boundmask, landmask, zoom_factor, offset_x, offset_y, brightness,canvas_width, canvas_height):
@@ -71,3 +72,21 @@ def get_zoomed_region(image, zoom_factor, offset_x, offset_y, canvas_width, canv
 
 # Should we put set_overlay here as well as it counts as rendering, keep display_image in visualizer
 
+def change_contrast(img_type, img_base, cum_hist, nan_mask, bin_list, bands, val):
+    bth = val/2
+    uth = 1- bth
+    contrast_img = []
+    clips = get_cutoff_from_cdf(cum_hist[img_type][0], bin_list[img_type][0], bands[img_type], bth, uth)
+    contrast_img= enhance_image(img_base.copy(), nan_mask[img_type], clips=clips)
+    return contrast_img
+
+def layer_imagery(HH_img, HV_img, stack="(HH, HH, HV)"):
+    HH_img = HH_img[:, :, 0]
+    HV_img = HV_img[:, :, 0]
+    if stack == "(HH, HH, HV)":
+        layered_img = np.stack([HH_img, HH_img, HV_img], axis=-1)
+    else: # "(HH, HV, HV)"
+        layered_img = np.stack([HH_img, HV_img, HV_img], axis=-1)
+
+    print(layered_img.shape)
+    return layered_img

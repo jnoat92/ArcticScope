@@ -36,8 +36,16 @@ class SceneState:
     img: np.ndarray = None
     img_name: str = ""
 
-    # Store original image
-    orig_img: np.ndarray = None
+    # Store original images (HH, HV)
+    raw_img: dict[str, np.ndarray] = field(default_factory=dict)
+    orig_img: dict[str, np.ndarray] = field(default_factory=dict)
+
+    # Store histogram data for contrast enhancement
+    contrast_img: dict[str, np.ndarray] = field(default_factory=dict)
+    nan_mask: dict[str, np.ndarray] = field(default_factory=dict)
+    cum_hist: dict[str, list[np.ndarray]] = field(default_factory=dict)
+    bin_list: dict[str, list[np.ndarray]] = field(default_factory=dict)
+    bands: dict[str, int] = field(default_factory=dict)
 
     predictions: dict[str, np.ndarray] = field(default_factory=dict)
     landmasks: dict[str, np.ndarray] = field(default_factory=dict)
@@ -62,7 +70,7 @@ class DisplaySettings:
     clip: bool = True
 
     better_contrast: bool = False # Alt contrast method for now
-    channel_mode: str = "(HH, HH, HV)" # Store current channel (image type)
+    channel_mode: str = "(HH/HV)" # Store current channel (image type)
 
 # Data class for values that impact the overlay
 @dataclass(slots=True)

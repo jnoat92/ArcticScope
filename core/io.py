@@ -14,6 +14,8 @@ from utils import generate_boundaries
 import os
 import json
 from parallel_stuff import Parallel
+from core.contrast_handler import get_img_histogram, get_cutoff_from_cdf, enhance_image
+from core.render import change_contrast
 import sys
 
 def PredictionLoader(iterator):
@@ -60,6 +62,41 @@ def load_images(folder_path):
     img_better_contrast["(HH, HV, HV)"] = np.stack([HH_better_contrast, HV_better_contrast, HV_better_contrast], axis=-1)
 
     return (img_base, img_better_contrast)
+
+def load_base_images(folder_path):
+    try:
+        HH = np.asarray(Image.open(folder_path + "/imagery_HH_UW_4_by_4_average.tif")) 
+        HV = np.asarray(Image.open(folder_path + "/imagery_HV_UW_4_by_4_average.tif"))
+
+    except FileNotFoundError as e:
+        return e, {}, {}, {}, {}, {}, {}
+
+    raw_img = {}
+    raw_img["HH"] = HH
+    raw_img["HV"] = HV
+
+    img_base = {}
+    img_base["HH"] = np.tile(HH[:,:,np.newaxis], (1,1,3))
+    img_base["HV"] = np.tile(HV[:,:,np.newaxis], (1,1,3))
+
+    nan_mask = {}
+    nan_mask["HH"] = np.isnan(HH)
+    nan_mask["HV"] = np.isnan(HV)
+
+    hist_list = {}
+    cum_hist = {}
+    bin_list = {}
+    bands = {}
+    for img_type in img_base.keys():
+        hist_list[img_type], cum_hist[img_type], bin_list[img_type], bands[img_type] = get_img_histogram(img_base[img_type], train_pixels=np.asarray(np.where(~nan_mask[img_type])))
+
+    contrast_img = {}
+    for img_type in img_base.keys():
+        #contrast_img[img_type] = change_contrast(img_type, img_base[img_type], cum_hist, nan_mask, bin_list, bands, val=0.0)
+        #clips = get_cutoff_from_cdf(cum_hist[img_type][0], bin_list[img_type][0], bands[img_type], bth=0.001, uth=0.999)
+        clips = get_cutoff_from_cdf(cum_hist[img_type][0], bin_list[img_type][0], bands[img_type], bth=0.000, uth=1.000)
+        contrast_img[img_type] = enhance_image(img_base[img_type].copy(), nan_mask[img_type], clips=clips)
+    return raw_img, img_base, contrast_img, nan_mask, cum_hist, bin_list, bands
 
 
 def load_prediction(folder_path, filenames, lbl_source):

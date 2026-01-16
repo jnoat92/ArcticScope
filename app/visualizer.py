@@ -16,10 +16,10 @@ import os
 from ui.evaluation import EvaluationPanel
 from ui.annotation import AnnotationPanel
 from utils import rgb2gray, generate_boundaries
-from core.io import load_images, load_prediction, load_existing_annotation
+from core.io import load_images, load_prediction, load_existing_annotation, load_base_images
 from core.segmentation import get_segment_contours
 from core.overlay import compose_overlay
-from core.render import crop_resize
+from core.render import crop_resize, change_contrast, layer_imagery
 from app.state import AppState
 
 
@@ -101,7 +101,7 @@ class Visualizer(ctk.CTk):
                                             sticky="w", padx=5, pady=5)
         
         # Color composite selection
-        self.mode_var_color_composite = ctk.StringVar(value="(HH, HH, HV)")  # Default selection
+        self.mode_var_color_composite = ctk.StringVar(value=self.app_state.display.channel_mode)  # Default selection
         HH_HV = ctk.CTkRadioButton(self.select_image_frame,
                                       text="(HH/HV)", 
                                       variable=self.mode_var_color_composite,
@@ -128,27 +128,42 @@ class Visualizer(ctk.CTk):
         )
         self.HH_HV_switch.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
-        # Better Contrast ON/OFF
-        ctk.CTkLabel(self.select_image_frame, text="Better contrast").grid(
-            row=4, column=0, sticky="w", padx=5, pady=5
-        )
+        # # Better Contrast ON/OFF
+        # ctk.CTkLabel(self.select_image_frame, text="Better contrast").grid(
+        #     row=4, column=0, sticky="w", padx=5, pady=5
+        # )
 
-        self.better_contrast_toggle_state = True
-        state = "ON" if self.better_contrast_toggle_state else "OFF"
-        self.better_contrast_toggle_btn = ctk.CTkButton(
-            self.select_image_frame,
-            text=state,
-            width=19,
-            command=self.better_contrast_toggle
+        # self.better_contrast_toggle_state = True
+        # state = "ON" if self.better_contrast_toggle_state else "OFF"
+        # self.better_contrast_toggle_btn = ctk.CTkButton(
+        #     self.select_image_frame,
+        #     text=state,
+        #     width=19,
+        #     command=self.better_contrast_toggle
+        # )
+        # self.better_contrast_toggle_btn.grid(row=4, column=1, sticky="w", padx=5, pady=5)
+        # self.default_fg_color = self.better_contrast_toggle_btn.cget("fg_color")
+        # self.default_hover_color = self.better_contrast_toggle_btn.cget("hover_color")
+        # self.default_text_color = self.better_contrast_toggle_btn.cget("text_color")
+
+        self.contrast_slider_value = 0  # Initial value
+        ctk.CTkLabel(self.select_image_frame, text="Contrast").grid(
+            row=5, column=0, sticky="e", padx=5, pady=5
         )
-        self.better_contrast_toggle_btn.grid(row=4, column=1, sticky="w", padx=5, pady=5)
-        self.default_fg_color = self.better_contrast_toggle_btn.cget("fg_color")
-        self.default_hover_color = self.better_contrast_toggle_btn.cget("hover_color")
-        self.default_text_color = self.better_contrast_toggle_btn.cget("text_color")
+        self.contrast_slider = ctk.CTkSlider(
+            self.select_image_frame,
+            from_=0,
+            to=100,
+            number_of_steps=20,
+            width=100,
+            command=self.contrast_slider_handle
+        )
+        self.contrast_slider.set(self.contrast_slider_value)  # Set initial value
+        self.contrast_slider.grid(row=5, column=1, pady=5, padx=5, sticky="w")
 
         self.brightness_slider_value = 0  # Initial value
         ctk.CTkLabel(self.select_image_frame, text="Brightness").grid(
-            row=5, column=0, sticky="e", padx=5, pady=5
+            row=6, column=0, sticky="e", padx=5, pady=5
         )
         self.brightness_slider = ctk.CTkSlider(
             self.select_image_frame,
@@ -159,7 +174,7 @@ class Visualizer(ctk.CTk):
             command=self.brightness_slider_handle
         )
         self.brightness_slider.set(self.brightness_slider_value)  # Set initial value
-        self.brightness_slider.grid(row=5, column=1, pady=5, padx=5, sticky="w")
+        self.brightness_slider.grid(row=6, column=1, pady=5, padx=5, sticky="w")
 
         # Opacity + segmentation controls in same block
         self.segmentation_frame = ctk.CTkFrame(self.control_frame)
@@ -193,6 +208,9 @@ class Visualizer(ctk.CTk):
             command=self.segmentation_toggle
         )
         self.segmentation_toggle_btn.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        self.default_fg_color = self.segmentation_toggle_btn.cget("fg_color")
+        self.default_hover_color = self.segmentation_toggle_btn.cget("hover_color")
+        self.default_text_color = self.segmentation_toggle_btn.cget("text_color")
 
         # Zoom controls
         self.zoom_frame = ctk.CTkFrame(self.control_frame)
@@ -396,12 +414,12 @@ class Visualizer(ctk.CTk):
     def choose_image(self):
         scene = self.app_state.scene
         display = self.app_state.display
-        if self.better_contrast_toggle_state:
-            scene.img = self.img_Better_contrast[display.channel_mode]
-            scene.orig_img = self.img_Better_contrast[display.channel_mode]
-        else:
-            scene.img = self.img_[display.channel_mode]
-            scene.orig_img = self.img_[display.channel_mode]
+        # if self.better_contrast_toggle_state:
+        #     scene.img = self.img_Better_contrast[display.channel_mode]
+        #     scene.orig_img = self.img_Better_contrast[display.channel_mode]
+        # else:
+        scene.img = self.img_[display.channel_mode]
+        scene.orig_img = self.img_[display.channel_mode]
 
     def display_image(self):
         image = self.overlay if self.app_state.overlay.show_overlay else self.img_resized.astype('uint8')
@@ -453,14 +471,31 @@ class Visualizer(ctk.CTk):
 
             self.title(f"Scene {scene.scene_name}-{display.channel_mode}")
 
-            images = load_images(scene.folder_path)
-            
-            if isinstance(images, FileNotFoundError):
-                messagebox.showinfo("Error", f"The selected directory does not contain the required files. Please, select a valid directory.\n\n{images}", parent=self.master)
+            #images = load_images(scene.folder_path)
+
+            raw_img, orig_img, contrast_images, scene.nan_mask, scene.cum_hist, scene.bin_list, scene.bands = load_base_images(scene.folder_path)
+            # Save raw images to app state for later use (e.g., layering)
+            scene.raw_img = raw_img
+
+            if isinstance(raw_img, FileNotFoundError):
+                messagebox.showinfo("Error", f"The selected directory does not contain the required files. Please, select a valid directory.\n\n{raw_img}", parent=self.master)
                 scene.folder_path = ''
                 return
             else:
-                self.img_, self.img_Better_contrast = images
+                #self.img_test, self.img_Better_contrast = images
+                self.img_ = orig_img
+                # self.img_Better_contrast = contrast_images
+                print(contrast_images["HH"].shape)
+                self.img_["(HH, HH, HV)"] = layer_imagery(
+                    orig_img["HH"],
+                    orig_img["HV"],
+                    stack="(HH, HH, HV)"
+                )
+                self.img_["(HH, HV, HV)"] = layer_imagery(
+                    orig_img["HH"],
+                    orig_img["HV"],
+                    stack="(HH, HV, HV)"
+                )
             
             # Handle switching scenes with existing custom annotation to one without
             if "Custom_Annotation" in scene.lbl_sources:
@@ -493,34 +528,38 @@ class Visualizer(ctk.CTk):
             self.HH_HV_switch.configure(state=ctk.DISABLED)
             self.HH_HV(get_channel=False)
 
-    def better_contrast_toggle(self):
-        self.better_contrast_toggle_state = not self.better_contrast_toggle_state
-        state = "ON" if self.better_contrast_toggle_state else "OFF"
-        self.better_contrast_toggle_btn.configure(text=state)
+    # def better_contrast_toggle(self):
+    #     self.better_contrast_toggle_state = not self.better_contrast_toggle_state
+    #     state = "ON" if self.better_contrast_toggle_state else "OFF"
+    #     self.better_contrast_toggle_btn.configure(text=state)
 
-        if self.better_contrast_toggle_state:
-            # Restore default appearance
-            self.better_contrast_toggle_btn.configure(
-                fg_color=self.default_fg_color,  # Default customtkinter blue
-                hover_color=self.default_hover_color,
-                text_color=self.default_text_color
-            )
-        else:
-            # Set to gray when OFF
-            self.better_contrast_toggle_btn.configure(
-                fg_color="#888888",     # Gray background
-                hover_color="#777777",  # Slightly darker on hover
-                text_color="white"
-            )
+    #     if self.better_contrast_toggle_state:
+    #         # Restore default appearance
+    #         self.better_contrast_toggle_btn.configure(
+    #             fg_color=self.default_fg_color,  # Default customtkinter blue
+    #             hover_color=self.default_hover_color,
+    #             text_color=self.default_text_color
+    #         )
+    #     else:
+    #         # Set to gray when OFF
+    #         self.better_contrast_toggle_btn.configure(
+    #             fg_color="#888888",     # Gray background
+    #             hover_color="#777777",  # Slightly darker on hover
+    #             text_color="white"
+    #         )
 
-        self.HH_HV(get_channel=False)
+    #     self.HH_HV(get_channel=False)
         
     def HH_HV(self, get_channel=True):
         display = self.app_state.display
         scene = self.app_state.scene
+        self.contrast_slider.set(0)  # Reset contrast slider
+        self.contrast_slider_handle(0)
 
         if get_channel:
             display.channel_mode = "HV" if self.HH_HV_switch.get() else "HH"
+
+        print(display.channel_mode)
 
         self.title(f"Scene {scene.scene_name}-{display.channel_mode}")
         self.choose_image()
@@ -537,6 +576,35 @@ class Visualizer(ctk.CTk):
                 self.annotation_panel.update_zoomed_display()
 
     # Image handle
+    def contrast_slider_handle(self, val):
+        scene = self.app_state.scene
+        display = self.app_state.display
+        display.contrast = float(val)/10000
+        print(display.channel_mode)
+        if display.channel_mode in ["(HH, HH, HV)", "(HH, HV, HV)"]:
+            print("Layering imagery with new contrast")
+            HH_contrasted = change_contrast("HH", scene.orig_img, scene.cum_hist, scene.nan_mask, scene.bin_list, scene.bands, display.contrast)
+            HV_contrasted = change_contrast("HV", scene.orig_img, scene.cum_hist, scene.nan_mask, scene.bin_list, scene.bands, display.contrast)
+            # Re-layer the imagery with new contrast
+            scene.img = layer_imagery(
+                HH_contrasted,
+                HV_contrasted,
+                display.channel_mode
+            )
+        else:
+            scene.img = change_contrast(display.channel_mode, scene.orig_img, scene.cum_hist, scene.nan_mask, scene.bin_list, scene.bands, display.contrast)
+
+        self.refresh_view()
+
+        if self.app_state.anno.polygon_points_img_coor: 
+            self.draw_polygon_on_canvas()
+
+        if (hasattr(self.annotation_panel, 'zoom_window') and 
+            self.annotation_panel.zoom_window is not None and 
+            self.annotation_panel.zoom_window.winfo_exists()):
+            if self.annotation_panel.zoom_window.winfo_viewable():            
+                self.annotation_panel.update_zoomed_display()
+
     def brightness_slider_handle(self,val):
         self.app_state.display.brightness = float(val)/100
         self.refresh_view()
