@@ -20,7 +20,7 @@ from core.io import load_prediction, load_existing_annotation, load_base_images
 from core.segmentation import get_segment_contours
 from core.overlay import compose_overlay
 from core.render import crop_resize, layer_imagery
-from core.enhance_contrast import blend
+from core.contrast_handler import enhance_outlier_slider
 from app.state import AppState
 
 
@@ -136,14 +136,15 @@ class Visualizer(ctk.CTk):
         )
         self.contrast_slider = ctk.CTkSlider(
             self.select_image_frame,
-            from_=0,
+            from_=20,
             to=100,
-            number_of_steps=20,
+            number_of_steps=10,
             width=100,
             command=self.contrast_slider_handle
         )
         self.contrast_slider.set(self.contrast_slider_value)  # Set initial value
         self.contrast_slider.grid(row=5, column=1, pady=5, padx=5, sticky="w")
+        self.contrast_slider._canvas.bind("<Button-3>", self.right_click_contrast_reset)
 
         # Brightness slider
         self.brightness_slider_value = 0  # Initial value
@@ -160,6 +161,7 @@ class Visualizer(ctk.CTk):
         )
         self.brightness_slider.set(self.brightness_slider_value)  # Set initial value
         self.brightness_slider.grid(row=6, column=1, pady=5, padx=5, sticky="w")
+        self.brightness_slider._canvas.bind("<Button-3>", self.right_click_brightness_reset)
 
         # Opacity + segmentation controls in same block
         self.segmentation_frame = ctk.CTkFrame(self.control_frame)
@@ -451,11 +453,12 @@ class Visualizer(ctk.CTk):
 
             self.title(f"Scene {scene.scene_name}-{display.channel_mode}")
 
-            raw_img, orig_img, contrast_images = load_base_images(scene.folder_path)
+            raw_img, orig_img, sorted_data, nan_mask = load_base_images(scene.folder_path)
             # Save raw images to app state for later use (e.g., layering)
             scene.raw_img = raw_img
             scene.orig_img = orig_img
-            scene.contrast_img = contrast_images
+            scene.sorted_data = sorted_data
+            scene.nan_mask = nan_mask
 
             if isinstance(raw_img, FileNotFoundError):
                 messagebox.showinfo("Error", f"The selected directory does not contain the required files. Please, select a valid directory.\n\n{raw_img}", parent=self.master)
@@ -494,6 +497,11 @@ class Visualizer(ctk.CTk):
 
         else:
             scene.folder_path = prev_folder_path
+
+        self.contrast_slider.set(20) # reset to default
+        self.app_state.display.contrast = 0.0
+        self.brightness_slider.set(0) # reset to default
+        self.app_state.display.brightness = 0.0
 
     def color_composite(self):
         display = self.app_state.display
@@ -535,17 +543,31 @@ class Visualizer(ctk.CTk):
     def contrast_slider_handle(self, val):
         scene = self.app_state.scene
         display = self.app_state.display
-        display.contrast = float(val)/100
+        if val <= 20: # Initial state
+            val = 0.0
+        display.contrast = float(val)/1000
 
         if display.channel_mode in ["(HH, HH, HV)", "(HH, HV, HV)"]:
-            HH_contrasted = blend(scene.orig_img["HH"],
-                scene.contrast_img["HH"],
-                display.contrast
+            HH_contrasted = enhance_outlier_slider(
+                img=scene.orig_img["HH"], # Pass raw image for faster processing
+                sorted_data=scene.sorted_data["HH"],
+                land_nan_mask=scene.nan_mask["HH"],
+                s=display.contrast,
+                s_max=0.1,
+                ksize=5,
+                output_dtype=np.uint8
             )
-            HV_contrasted = blend(scene.orig_img["HV"],
-                scene.contrast_img["HV"],
-                display.contrast
+
+            HV_contrasted = enhance_outlier_slider(
+                img=scene.orig_img["HV"], # Pass raw image for faster processing
+                sorted_data=scene.sorted_data["HV"],
+                land_nan_mask=scene.nan_mask["HV"],
+                s=display.contrast,
+                s_max=0.1,
+                ksize=5,
+                output_dtype=np.uint8
             )
+
             # Re-layer the imagery with new contrast
             scene.img = layer_imagery(
                 HH_contrasted,
@@ -553,10 +575,14 @@ class Visualizer(ctk.CTk):
                 display.channel_mode
             )
         else:
-            scene.img = blend(
-                scene.orig_img[display.channel_mode],
-                scene.contrast_img[display.channel_mode],
-                display.contrast
+            scene.img = enhance_outlier_slider(
+                img=scene.orig_img[display.channel_mode], # Pass raw image for faster processing
+                sorted_data=scene.sorted_data[display.channel_mode],
+                land_nan_mask=scene.nan_mask[display.channel_mode],
+                s=display.contrast,
+                s_max=0.1,
+                ksize=5,
+                output_dtype=np.uint8
             )
 
         self.refresh_view()
@@ -570,8 +596,37 @@ class Visualizer(ctk.CTk):
             if self.annotation_panel.zoom_window.winfo_viewable():            
                 self.annotation_panel.update_zoomed_display()
 
+    def right_click_contrast_reset(self, event):
+        self.contrast_slider.set(20) # reset to default
+        self.app_state.display.contrast = 0.0
+        self.contrast_slider_handle(20)
+        self.refresh_view()
+
+        if self.app_state.anno.polygon_points_img_coor: 
+            self.draw_polygon_on_canvas()
+
+        if (hasattr(self.annotation_panel, 'zoom_window') and 
+            self.annotation_panel.zoom_window is not None and 
+            self.annotation_panel.zoom_window.winfo_exists()):
+            if self.annotation_panel.zoom_window.winfo_viewable():            
+                self.annotation_panel.update_zoomed_display()
+
     def brightness_slider_handle(self,val):
         self.app_state.display.brightness = float(val)/100
+        self.refresh_view()
+
+        if self.app_state.anno.polygon_points_img_coor: 
+            self.draw_polygon_on_canvas()
+
+        if (hasattr(self.annotation_panel, 'zoom_window') and 
+            self.annotation_panel.zoom_window is not None and 
+            self.annotation_panel.zoom_window.winfo_exists()):
+            if self.annotation_panel.zoom_window.winfo_viewable():            
+                self.annotation_panel.update_zoomed_display()
+
+    def right_click_brightness_reset(self, event):
+        self.brightness_slider.set(0) # reset to default
+        self.app_state.display.brightness = 0.0
         self.refresh_view()
 
         if self.app_state.anno.polygon_points_img_coor: 

@@ -1,133 +1,162 @@
-import matplotlib.pyplot as plt
+import cv2
 import numpy as np
-import itertools
-from core.utils import median_filter_numba_parallel
 
-def filter_outliers(img, bins=2**16-1, bth=0.001, uth=0.999, train_pixels=None):
-    
-    if len(img.shape) == 2:
-        rows, cols = img.shape
-        bands = 1
-        img = img[:,:,np.newaxis]
+from core.utils import scale_channels_inplace
+
+def prepare_sorted_data(img, valid_mask=None):
+    """
+    Precompute sorted per-channel values for fast O(1) percentile queries.
+    img: (H,W) or (H,W,C)
+    valid_mask: (H,W) bool, True where pixels are valid (NOT NaN/masked)
+                If None: uses np.isfinite on channel 0.
+    Returns: list of 1D sorted arrays, length C (or 1).
+    """
+    x = np.asarray(img)
+    if x.ndim == 2:
+        x = x[:, :, None]
+
+    if valid_mask is None:
+        valid_mask = np.isfinite(x[:, :, 0])
     else:
-        rows, cols, bands = img.shape
+        valid_mask = valid_mask.astype(bool)
 
-    if train_pixels is None:
-        h = np.arange(0, rows)
-        w = np.arange(0, cols)
-        train_pixels = np.asarray(list(itertools.product(h, w))).transpose()
+    sorted_list = []
+    for c in range(x.shape[2]):
+        v = x[:, :, c][valid_mask] # select valid pixels
+        # If dtype isn't float, no NaNs, but still fine
+        v = np.asarray(v).ravel()
+        v_sorted = np.sort(v, axis=0)
+        sorted_list.append(v_sorted)
 
-    min_value, max_value = [], []
-    for band in range(bands):
-        hist, bins = np.histogram(img[train_pixels[0], train_pixels[1], band].ravel(), bins=bins) # select training pixels
-        cum_hist = np.cumsum(hist) / hist.sum()
+    return sorted_list
 
-        # See outliers cut values
-        plt.plot(bins[1:], hist)
-        plt.plot(bins[1:], cum_hist)
-        plt.stem(bins[len(cum_hist[cum_hist<bth])], 0.5)
-        plt.stem(bins[len(cum_hist[cum_hist<uth])], 0.5)
-        plt.title("band %d"%(band))
-        plt.show()
 
-        min_value.append(bins[len(cum_hist[cum_hist<bth])])
-        max_value.append(bins[len(cum_hist[cum_hist<uth])])
-        
-    return [np.array(min_value), np.array(max_value)]
+def percentile_from_sorted(x_sorted, th):
+    """
+    O(1) percentile lookup from a pre-sorted 1D array, with linear interpolation.
+    th in [0,1]
+    """
+    th = float(np.clip(th, 0.0, 1.0))
+    n = x_sorted.size
+    if n == 0:
+        return np.nan
 
-# Get image histogram and CDF
-def get_img_histogram(img, bins=2**16-1, train_pixels=None):
-    if len(img.shape) == 2:
-        rows, cols = img.shape
-        bands = 1
-        img = img[:,:,np.newaxis]
-    else:
-        rows, cols, bands = img.shape
+    i = th * (n - 1)
+    i0 = int(i)
+    w = i - i0
+    i1 = min(i0 + 1, n - 1)
+    return (1.0 - w) * x_sorted[i0] + w * x_sorted[i1]
 
-    if train_pixels is None:
-        h = np.arange(0, rows)
-        w = np.arange(0, cols)
-        train_pixels = np.asarray(list(itertools.product(h, w))).transpose()
 
-    hist_list = []
-    cum_hist_list = []
-    bin_list = []
-    for band in range(bands):
-        hist, bins = np.histogram(img[train_pixels[0], train_pixels[1], band].ravel(), bins=bins) # select training pixels
-        cum_hist = np.cumsum(hist) / hist.sum()
+def median_repair_outliers_fast(
+    img,
+    lo=None, hi=None,
+    p_lo=1.0, p_hi=99.0,
+    ksize=11,
+    q_lo=None, q_hi=None,
+    return_mask=False,
+):
+    """
+    Efficient outlier repair:
+      - repair only values outside [lo, hi] by replacing them with medianBlur values
+      - uses uint16 quantization for fast cv2.medianBlur
+      - works on 2D input
 
-        hist_list.append(hist)
-        cum_hist_list.append(cum_hist)
-        bin_list.append(bins)
-        
-    return hist_list, cum_hist_list, bin_list, bands
+    Returns:
+      out (float32)  or (out, out_mask) if return_mask=True
+    """
+    x = np.asarray(img)
+    if x.ndim != 2:
+        raise ValueError("img must be 2D")
 
-def get_cutoff_from_cdf(cum_hist, bins, bands, bth=0.001, uth=0.999):
-    min_value, max_value = [], []
-    for band in range(bands):
-        # See outliers cut values
-        # plt.plot(bins[1:], hist)
-        # plt.plot(bins[1:], cum_hist)
-        # plt.stem(bins[len(cum_hist[cum_hist<bth])], 0.5)
-        # plt.stem(bins[len(cum_hist[cum_hist<uth])], 0.5)
-        # plt.title("band %d"%(band))
-        # plt.show()
+    xf = x.astype(np.float32, copy=False)
 
-        min_value.append(bins[len(cum_hist[cum_hist<bth])])
-        max_value.append(bins[len(cum_hist[cum_hist<uth])])
-        
-    return [np.array(min_value), np.array(max_value)]
+    finite = np.isfinite(xf)
+    if not finite.all():
+        xf2 = xf.copy()
+        xf2[~finite] = 0.0
+        xf = xf2
 
-def median_filter(img, clips, mask):
-    kernel_size = 10
+    # Compute lo/hi if not given (slower; best is passing lo/hi)
+    if lo is None or hi is None:
+        v = xf[finite] if finite is not None else xf.ravel()
+        lo2, hi2 = np.percentile(v, [p_lo, p_hi])
+        lo = lo2 if lo is None else lo
+        hi = hi2 if hi is None else hi
 
-    outliers = ((img < clips[0]) + (img > clips[1]))
-    if len(img.shape) == 3:
-        outliers *= np.expand_dims(mask, axis=2)
-    else: outliers *= mask
-    # plt.imshow(outliers[:,:,0], cmap='gray')
-    # plt.imshow(outliers[:,:,1], cmap='gray')
-    # plt.title("outliers mask")
-    # plt.show()
-    out_idx = np.asarray(np.where(outliers))
+    out_mask = (xf < lo) | (xf > hi)
+    if not np.any(out_mask):
+        return (xf, out_mask) if return_mask else xf
 
-    img_ = img.copy()
-    for i in range(out_idx.shape[1]):
-        x = out_idx[0][i]
-        y = out_idx[1][i]
-        a = x - kernel_size//2 if x - kernel_size//2 >=0 else 0
-        c = y - kernel_size//2 if y - kernel_size//2 >=0 else 0
-        b = x + kernel_size//2 if x + kernel_size//2 <= img.shape[0] else img.shape[0]
-        d = y + kernel_size//2 if y + kernel_size//2 <= img.shape[1] else img.shape[1]
-        win = img[a:b, c:d][mask[a:b, c:d]==True]
-        img_[x, y] = np.median(win, axis=0)
-        # img_[x, y] = np.mean(win, axis=0)
-    
-    return img_
+    if (ksize & 1) == 0:
+        ksize += 1  # OpenCV requires odd
 
-def enhance_image(img, land_nan_mask, output_folder='', clips=None):
+    if q_lo is None:
+        q_lo = lo
+    if q_hi is None:
+        q_hi = hi
+    if q_hi <= q_lo:
+        q_hi = q_lo + 1e-6
 
-    # fig, axs = plt.subplots(2, 1, figsize=(16, 8))
-    # hist, bins  = np.histogram(img[~land_nan_mask], bins=10000)
-    # axs[0].plot(bins[1:], hist/(hist.sum())); axs[0].set_title("hist")
-    if clips is None:
-        clips = filter_outliers(img.copy(), bins=2**16-1, bth=0.000, uth=1.000, 
-                                train_pixels=np.asarray(np.where(~land_nan_mask)))
-        
-    img = median_filter_numba_parallel(img, clips, ~land_nan_mask)
+    scale = 65535.0 / (q_hi - q_lo)
+    u16 = np.clip((xf - q_lo) * scale, 0.0, 65535.0).astype(np.uint16)
 
-    # hist, bins  = np.histogram(img[~land_nan_mask], bins=10000)
-    # axs[1].plot(bins[1:], hist/(hist.sum())); axs[1].set_title("(no outliers)-hist")
-    # plt.tight_layout()
-    # plt.show()
-    # #plt.savefig(output_folder + 'histogram.png')
-    # plt.close()
+    med_u16 = cv2.medianBlur(u16, ksize)
+    med = med_u16.astype(np.float32) / scale + q_lo
 
-    # Normalization
-    min_ = img[~land_nan_mask].min(0)
-    max_ = img[~land_nan_mask].max(0)
-    img = np.uint8(255*((img - min_) / (max_ - min_)))
-    
-    img[land_nan_mask] = 255
+    out = xf.copy()
+    out[out_mask] = med[out_mask]
 
-    return img
+    return (out, out_mask) if return_mask else out
+
+
+def enhance_outlier_slider(
+    img,
+    sorted_data,
+    land_nan_mask=None,
+    s=0.0,          # slider in [0,0.25]
+    s_max=0.25,
+    ksize=11,
+    output_dtype=np.uint8,
+):
+    """
+    Slider-controlled outlier:
+      s=0 -> exact original
+      s>0 -> bth=s/2, uth=1-bth; repair outliers beyond those percentiles.
+
+    img: (H,W) or (H,W,C)
+    sorted_data: list of sorted arrays from prepare_sorted_data()
+    land_nan_mask: (H,W) bool where you want to exclude pixels (can be placeholder False)
+    """
+    x = np.asarray(img)
+    if x.ndim == 2:
+        x = x[:, :, None]
+
+    H, W, C = x.shape
+    if land_nan_mask is None:
+        land_nan_mask = np.zeros((H, W), dtype=bool)
+    # valid = ~land_nan_mask
+
+    s = float(np.clip(s, 0.0, s_max))
+
+    # s=0 -> return original exactly
+    if s == 0.0:
+        out = x.copy()
+        return out[:, :, 0] if img.ndim == 2 else out
+
+    # Map slider -> bth/uth (as suggested)
+    bth = s / 2.0
+    uth = 1.0 - bth
+
+    out = x.astype(np.float32, copy=True)
+
+    # Per-channel repair using precomputed percentiles
+    for c in range(C):
+        lo = percentile_from_sorted(sorted_data[c], bth)
+        hi = percentile_from_sorted(sorted_data[c], uth)
+        scale_channels_inplace(out, lo, hi, c)
+
+    out = np.clip(out, 0, 255)
+    out = out.astype(output_dtype)
+
+    return out[:, :, 0] if img.ndim == 2 else out

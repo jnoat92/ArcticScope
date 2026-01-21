@@ -14,7 +14,7 @@ import sys
 from core.utils import rgb2gray
 from core.utils import generate_boundaries
 from core.parallel_stuff import Parallel
-from core.enhance_contrast import enhance_image
+from core.contrast_handler import prepare_sorted_data
 
 def PredictionLoader(iterator):
     key, filename = iterator
@@ -81,10 +81,10 @@ def load_base_images(folder_path):
     nan_mask["HH"] = np.isnan(HH)
     nan_mask["HV"] = np.isnan(HV)
 
-    contrast_img = {}
+    data_sorted = {}
     for img_type in img_base.keys():
-        contrast_img[img_type] = enhance_image(img_base[img_type], nan_mask[img_type], contrast=1.0, bth=0.1, uth=0.9)
-    return raw_img, img_base, contrast_img
+        data_sorted[img_type] = prepare_sorted_data(img_base[img_type], valid_mask=~nan_mask[img_type])
+    return raw_img, img_base, data_sorted, nan_mask
 
 
 def load_prediction(folder_path, filenames, lbl_source):
