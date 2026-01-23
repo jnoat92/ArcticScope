@@ -726,8 +726,9 @@ class Visualizer(ctk.CTk):
         overlay = self.app_state.overlay
         scene = self.app_state.scene
 
-        overlay.local_segmentation_area = np.stack([scene.raw_img["HH"], scene.raw_img["HV"]], axis=-1)[y_min:y_max, x_min:x_max]
-        print(overlay.local_segmentation_area.shape)
+        overlay.local_segmentation_area = np.stack([scene.raw_img[overlay.local_segmentation_source], 
+                                                    scene.raw_img[overlay.local_segmentation_source]], axis=-1)[y_min:y_max, x_min:x_max]
+
         overlay.local_segmentation_limits = (x_min, y_min, x_max, y_max)
         # Disable select local segmentation mode after selection
         overlay.select_local_segmentation = False
@@ -1007,7 +1008,7 @@ class Visualizer(ctk.CTk):
             if overlay.show_local_segmentation:
                 if x < overlay.local_segmentation_limits[0] or x >= overlay.local_segmentation_limits[2] or \
                    y < overlay.local_segmentation_limits[1] or y >= overlay.local_segmentation_limits[3]:
-                    result = messagebox.askyesno("Selection Out of Local Segmentation Area", "Selecting outside of local segmentation view will close the local segmentation view. Close local segmentation view?", parent=self.master)
+                    result = messagebox.askyesno("Selection Out of Local Segmentation Area", "Selecting outside of local segmentation view will close the local segmentation view.\n\nClose local segmentation view?", parent=self.master)
                     if result: # Close local segmentation view
                         overlay.show_local_segmentation = False
                         self.refresh_view()
@@ -1315,6 +1316,13 @@ class Visualizer(ctk.CTk):
         overlay.select_local_segmentation = True
         # Using zoom selection for local segmentation area selection
         self.enable_zoom_selection()
+
+    def toggle_local_seg_source(self):
+        overlay = self.app_state.overlay
+        if self.annotation_panel.local_seg_switch.get():
+            overlay.local_segmentation_source = "HV"
+        else:
+            overlay.local_segmentation_source = "HH"
 
     def clear_local_seg(self):
         overlay = self.app_state.overlay

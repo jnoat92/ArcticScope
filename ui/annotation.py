@@ -49,14 +49,21 @@ class AnnotationPanel(ctk.CTkFrame):
         ctk.CTkButton(self.labels_frame, text="reset from", 
                       width=20, command=self.reset_label_from).grid(row=1, column=2, padx=5, pady=5)
         
-        # Labels for annotation
-        self.labels_frame = ctk.CTkFrame(self)
-        self.labels_frame.grid(row=0, column=2, padx=5, pady=5)
-        ctk.CTkLabel(self.labels_frame, text="Local Segmentation").grid(row=0, column=0, columnspan=3, sticky="nsew", pady=5)
-        self.local_segmentation_btn = ctk.CTkButton(self.labels_frame, text="Select Area", 
+        # Local segmentation frame
+        self.local_seg_frame = ctk.CTkFrame(self)
+        self.local_seg_frame.grid(row=0, column=2, padx=5, pady=5)
+        ctk.CTkLabel(self.local_seg_frame, text="Local Segmentation").grid(row=0, column=0, columnspan=3, sticky="nsew", pady=5)
+        self.local_segmentation_btn = ctk.CTkButton(self.local_seg_frame, text="Select Area", 
                       width=20, command=self.command_parent.select_area_local_segmentation).grid(row=1, column=0, padx=5, pady=5)
-        self.local_seg_clear_btn = ctk.CTkButton(self.labels_frame, text="Clear Local Seg", 
-                      width=20, command=self.command_parent.clear_local_seg).grid(row=1, column=1, padx=5, pady=5)
+        self.local_seg_switch = ctk.CTkSwitch(
+            self.local_seg_frame,
+            text="HH-HV",
+            command=self.command_parent.toggle_local_seg_source
+        )
+        self.local_seg_switch.select()  # Default to HV
+        self.local_seg_switch.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        self.local_seg_clear_btn = ctk.CTkButton(self.local_seg_frame, text="Clear Local Seg", 
+                      width=20, command=self.command_parent.clear_local_seg).grid(row=1, column=2, padx=5, pady=5)
         
 
 
