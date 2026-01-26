@@ -1310,6 +1310,18 @@ class Visualizer(ctk.CTk):
     def label_ice(self):
         self.annotate_class([255, 130, 0])
 
+    def label_shoal(self):
+        self.annotate_class([0, 255, 0])
+
+    def label_ship(self):
+        self.annotate_class([255, 255, 0])
+
+    def label_iceberg(self):
+        self.annotate_class([255, 0, 255])
+
+    def label_unknown(self):
+        self.annotate_class([150, 150, 150])
+
     # Change this function name later
     def select_area_local_segmentation(self):
         overlay = self.app_state.overlay
