@@ -41,19 +41,52 @@ class AnnotationPanel(ctk.CTkFrame):
         # Labels for annotation
         self.labels_frame = ctk.CTkFrame(self)
         self.labels_frame.grid(row=0, column=1, padx=5, pady=5)
-        ctk.CTkLabel(self.labels_frame, text="Labels").grid(row=0, column=0, columnspan=3, sticky="nsew", pady=5)
+        ctk.CTkLabel(self.labels_frame, text="Labels").grid(row=0, column=0, columnspan=4, sticky="nsew", pady=5)
         ctk.CTkButton(self.labels_frame, text="ice", width=20, fg_color="#bf803f", text_color="#000000",
                       command=command_parent.label_ice).grid(row=1, column=0, padx=5, pady=5)
         ctk.CTkButton(self.labels_frame, text="water", width=20, fg_color="#3fbfbf", text_color="#000000",
                       command=command_parent.label_water).grid(row=1, column=1, padx=5, pady=5)
+        # Other options dropdown
+        self.other_options_list = ["shoal", "ship", "iceberg", "unknown"]
+        self.other_options_color = {
+            "shoal": "#00ff00",
+            "ship": "#ffff00",
+            "iceberg": "#ff00ff",
+            "unknown": "#969696"
+        }
+        self.other_options_var = ctk.StringVar(value="Other")
+        self.other_options_menu = ctk.CTkOptionMenu(self.labels_frame, values=self.other_options_list, 
+                                                    variable=self.other_options_var, command=self.select_other_label, 
+                                                    fg_color="#A5A5A5", button_color="#A5A5A5",
+                                                    dropdown_fg_color="#A5A5A5", text_color="#000000",
+                                                    width=40, corner_radius=10)
+        self.other_options_menu.grid(row=1, column=2, padx=5, pady=5)
         ctk.CTkButton(self.labels_frame, text="reset from", 
-                      width=20, command=self.reset_label_from).grid(row=1, column=2, padx=5, pady=5)
+                      width=20, command=self.reset_label_from).grid(row=1, column=3, padx=5, pady=5)
         
+        # Local segmentation frame
+        self.local_seg_frame = ctk.CTkFrame(self)
+        self.local_seg_frame.grid(row=0, column=2, padx=5, pady=5)
+        ctk.CTkLabel(self.local_seg_frame, text="Local Segmentation").grid(row=0, column=0, columnspan=3, sticky="nsew", pady=5)
+        self.local_segmentation_btn = ctk.CTkButton(self.local_seg_frame, text="Select Area", 
+                      width=20, command=self.command_parent.select_area_local_segmentation).grid(row=1, column=0, padx=5, pady=5)
+        self.local_seg_switch = ctk.CTkSwitch(
+            self.local_seg_frame,
+            text="HH-HV",
+            command=self.command_parent.toggle_local_seg_source
+        )
+        self.local_seg_switch.select()  # Default to HV
+        self.local_seg_switch.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        self.local_seg_clear_btn = ctk.CTkButton(self.local_seg_frame, text="Clear Local Seg", 
+                      width=20, command=self.command_parent.clear_local_seg).grid(row=1, column=2, padx=5, pady=5)
+        
+
+
         # Notes frame
         self.notes_frame = ctk.CTkFrame(self)
-        self.notes_frame.grid(row=0, column=2, padx=5, pady=5)
+        self.notes_frame.grid(row=0, column=3, padx=5, pady=5, rowspan=2)
         ctk.CTkLabel(self.notes_frame, text="Notes:").grid(row=0, column=0, sticky="w", padx=10)
-        self.notes_text = ctk.CTkTextbox(self.notes_frame, width=300, height=50)
+        self.notes_text = ctk.CTkTextbox(self.notes_frame, width=300, height=100)
         self.notes_text.grid(row=1, column=0, pady=(0, 5), padx=10)
 
         # Saving annotations
@@ -66,6 +99,17 @@ class AnnotationPanel(ctk.CTkFrame):
         self.unsaved_changes = False
         self.save_button.configure(state=ctk.NORMAL)
 
+    def select_other_label(self, choice):
+        # Using if, elif for ensuring version compatibility
+        if choice == "shoal":
+            self.command_parent.label_shoal()
+        elif choice == "ship":
+            self.command_parent.label_ship()
+        elif choice == "iceberg":
+            self.command_parent.label_iceberg()
+        elif choice == "unknown":
+            self.command_parent.label_unknown()
+        self.other_options_var.set("Other")
 
     def reset_label_from(self):
         """Reset the label from available label sources."""
@@ -175,7 +219,7 @@ class AnnotationPanel(ctk.CTkFrame):
 
         # Apply overlay
         overlay = blend_overlay(pred_resized, img_resized, boundmask_resized, 
-                                                 landmask_resized, overlay_state.alpha)
+                                                 landmask_resized, None, overlay_state.alpha)
         image = overlay if overlay_state.show_overlay else img_resized
         image = image.astype(np.uint8)
 
