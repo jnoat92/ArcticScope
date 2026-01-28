@@ -14,6 +14,7 @@ import rasterio
 from lxml import etree
 from pathlib import Path
 import cv2
+from rasterio.warp import reproject, Resampling, calculate_default_transform
 
 from core.utils import rgb2gray, generate_boundaries, prepare_sorted_data_numba
 from core.parallel_stuff import Parallel
@@ -146,7 +147,7 @@ def load_existing_annotation(scene_name):
         return custom_anno_variable, notes
     else:
         return None, notes
-        
+    
 def load_rcm_product(data_dir):
     """
     Load and parse RCM (Radarsat Constellation Mission) SAR product data.
@@ -201,6 +202,9 @@ def load_rcm_product(data_dir):
                 raise ValueError(f"expected 2 bands, found {src.count}")
             hh = src.read(1)
             hv = src.read(2)
+            src_transform = src.transform
+            src_crs = src.crs
+            src_bounds = src.bounds
         
         # parse product.xml
         xml_root = etree.parse(str(xml_file)).getroot()
@@ -239,29 +243,6 @@ def load_rcm_product(data_dir):
                     "longitude": float(lon.text)
                 })
 
-        print("RCM product loaded successfully.")
-        
-        # Normalize HH band to uint8 for visualization
-        land_nan_mask_hh = np.isnan(hh)
-        min_ = hh[~land_nan_mask_hh].min(0)
-        max_ = hh[~land_nan_mask_hh].max(0)
-        hh = np.uint8(255*((hh - min_) / (max_ - min_)))
-
-        # Normalize HV band to uint8 for visualization
-        land_nan_mask_hv = np.isnan(hv)
-        min_ = hv[~land_nan_mask_hv].min(0)
-        max_ = hv[~land_nan_mask_hv].max(0)
-        hv = np.uint8(255*((hv - min_) / (max_ - min_)))
-
-        raw_img, img_base, hist, n_valid, nan_mask = setup_base_images(hh, hv)
-
-        # save_hh_img = Image.fromarray(hh)
-        # save_hh_img.save("hh_test.png")
-
-        # save_hv_img = Image.fromarray(hv)
-        # save_hv_img.save("hv_test.png")
-        print("Returning RCM product data.")
-
         return {
             "folder_name": data_dir,
             "product_id": product_id,
@@ -269,9 +250,99 @@ def load_rcm_product(data_dir):
             "hv": hv,
             "pixel_spacing": pixel_spacing,
             "geocoded_points": geocoded_points,
-            "xml": xml_root
-        }, raw_img, img_base, hist, n_valid, nan_mask
+            "xml": xml_root,
+            "src_transform": src_transform,
+            "src_crs": src_crs,
+            "src_bounds": src_bounds
+        }
 
     except Exception as e:
         print(f"Skipping {data_dir}: {e}")
         return None
+    
+def scale_hh_hv_to_200m(rcm_data, target_spacing_m=200):
+    """
+    Loop over all RCM product folders in data_dir, rescale HH/HV to 200 m,
+    and save the rescaled .img next to the original .img.
+    """
+    # calculate target transform & shape
+    dst_transform, dst_width, dst_height = calculate_default_transform(
+        rcm_data["src_crs"],
+        rcm_data["src_crs"],
+        rcm_data["hh"].shape[1],    # cols,
+        rcm_data["hh"].shape[0],    # rows,
+        *rcm_data["src_bounds"],
+        resolution=target_spacing_m
+    )
+
+    # allocate outputs
+    hh_200m = np.empty((dst_height, dst_width), dtype=np.float32)
+    hv_200m = np.empty((dst_height, dst_width), dtype=np.float32)
+
+    # resample HH
+    reproject(
+        source=rcm_data["hh"],
+        destination=hh_200m,
+        src_transform=rcm_data["src_transform"],
+        src_crs=rcm_data["src_crs"],
+        dst_transform=dst_transform,
+        dst_crs=rcm_data["src_crs"],
+        resampling=Resampling.average
+    )
+
+    # resample HV
+    reproject(
+        source=rcm_data["hv"],
+        destination=hv_200m,
+        src_transform=rcm_data["src_transform"],
+        src_crs=rcm_data["src_crs"],
+        dst_transform=dst_transform,
+        dst_crs=rcm_data["src_crs"],
+        resampling=Resampling.average
+    )
+
+    # # create output folder inside product_dir
+    # out_dir = product_dir / "200m_pixel_spacing"
+    # out_dir.mkdir(exist_ok=True)
+    # out_path = out_dir / (img_path.stem + "_200m.img")
+
+    # # save unified .img
+    # with rasterio.open(
+    #     out_path,
+    #     "w",
+    #     driver="HFA",
+    #     height=hh_200m.shape[0],
+    #     width=hh_200m.shape[1],
+    #     count=2,
+    #     dtype=hh_200m.dtype,
+    #     crs=src_crs,
+    #     transform=dst_transform
+    # ) as dst:
+    #     dst.write(hh_200m, 1)
+    #     dst.write(hv_200m, 2)
+    #     dst.set_band_description(1, "HH")
+    #     dst.set_band_description(2, "HV")
+
+    return {"hh": hh_200m, "hv": hv_200m, "transform": dst_transform}
+
+def load_rcm_base_images(data_dir):
+
+    rcm_data = load_rcm_product(data_dir)
+    img_base = scale_hh_hv_to_200m(rcm_data, target_spacing_m=200)
+    hh = img_base["hh"]
+    hv = img_base["hv"]
+
+    # Normalize HH band to uint8 for visualization
+    land_nan_mask_hh = np.isnan(hh)
+    min_ = hh[~land_nan_mask_hh].min(0)
+    max_ = hh[~land_nan_mask_hh].max(0)
+    hh = np.uint8(255*((hh - min_) / (max_ - min_)))
+
+    # Normalize HV band to uint8 for visualization
+    land_nan_mask_hv = np.isnan(hv)
+    min_ = hv[~land_nan_mask_hv].min(0)
+    max_ = hv[~land_nan_mask_hv].max(0)
+    hv = np.uint8(255*((hv - min_) / (max_ - min_)))
+
+    raw_img, img_base, hist, n_valid, nan_mask = setup_base_images(hh, hv)
+    return raw_img, img_base, hist, n_valid, nan_mask

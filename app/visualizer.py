@@ -17,7 +17,7 @@ from ui.evaluation import EvaluationPanel
 from ui.annotation import AnnotationPanel
 from ui.minimap import Minimap
 from core.utils import rgb2gray, generate_boundaries
-from core.io import load_prediction, load_existing_annotation, load_base_images, load_rcm_product
+from core.io import load_prediction, load_existing_annotation, load_base_images, load_rcm_base_images
 from core.segmentation import get_segment_contours, IRGS
 from core.overlay import compose_overlay
 from core.render import crop_resize, layer_imagery
@@ -476,7 +476,7 @@ class Visualizer(ctk.CTk):
             self.title(f"Scene {scene.scene_name}-{display.channel_mode}")
 
             if scene.scene_name.startswith("RCM"):
-                self.rcm_dict, raw_img, orig_img, hist, n_valid, nan_mask = load_rcm_product(scene.folder_path)
+                raw_img, orig_img, hist, n_valid, nan_mask = load_rcm_base_images(scene.folder_path)
             else:
                 raw_img, orig_img, hist, n_valid, nan_mask = load_base_images(scene.folder_path)
             # Save raw images to app state for later use (e.g., layering)
