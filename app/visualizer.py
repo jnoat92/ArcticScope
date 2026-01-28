@@ -245,13 +245,13 @@ class Visualizer(ctk.CTk):
         self.app_state.scene.lbl_sources = [
             "Unet+ITT_pixel",
             # "Unet+ITT_pixel+MV",
-            "Unet+ITT_region",
+            # "Unet+ITT_region",
             # "Results_Major"
         ]
         filenames_ = [
             "colored_predict_cnn.png",
             # "CNN_colored_m_v_per_CC.png",
-            "colored_predict_transformer.png",
+            # "colored_predict_transformer.png",
             # "resnet.png"
         ]
         self.app_state.scene.filenames = ["/{}/{}".format(lbl_s, file)
@@ -369,7 +369,7 @@ class Visualizer(ctk.CTk):
         scene.landmasks = {}
         scene.boundmasks = {}
 
-        variables = load_prediction(scene.folder_path, scene.filenames, scene.lbl_sources)
+        variables = load_prediction(scene.folder_path, scene.filenames, scene.lbl_sources, img_shape=scene.orig_img["HH"].shape)
         existing_anno, anno.annotation_notes = load_existing_annotation(scene.scene_name)
 
         if existing_anno is not None:
@@ -419,7 +419,6 @@ class Visualizer(ctk.CTk):
         display = self.app_state.display
         scene.img = self.img_[display.channel_mode]
 
-        print("Chosen image shape:", scene.img.shape)
         self.minimap.set_image(scene.img)
 
     def display_image(self):
@@ -477,14 +476,14 @@ class Visualizer(ctk.CTk):
             self.title(f"Scene {scene.scene_name}-{display.channel_mode}")
 
             if scene.scene_name.startswith("RCM"):
-                self.rcm_dict, raw_img, orig_img, sorted_data, nan_mask = load_rcm_product(scene.folder_path)
-                print(self.rcm_dict["product_id"])
+                self.rcm_dict, raw_img, orig_img, hist, n_valid, nan_mask = load_rcm_product(scene.folder_path)
             else:
-                raw_img, orig_img, sorted_data, nan_mask = load_base_images(scene.folder_path)
+                raw_img, orig_img, hist, n_valid, nan_mask = load_base_images(scene.folder_path)
             # Save raw images to app state for later use (e.g., layering)
             scene.raw_img = raw_img
             scene.orig_img = orig_img
-            scene.sorted_data = sorted_data
+            scene.hist = hist
+            scene.n_valid = n_valid
             scene.nan_mask = nan_mask
 
             if isinstance(raw_img, FileNotFoundError):
@@ -504,8 +503,6 @@ class Visualizer(ctk.CTk):
                     orig_img["HV"],
                     stack="(HH, HV, HV)"
                 )
-
-                print(orig_img["HH"].shape, orig_img["HV"].shape)
             
             # Handle switching scenes with existing custom annotation to one without
             if "Custom_Annotation" in scene.lbl_sources:
@@ -578,23 +575,17 @@ class Visualizer(ctk.CTk):
 
         if display.channel_mode in ["(HH, HH, HV)", "(HH, HV, HV)"]:
             HH_contrasted = enhance_outlier_slider(
-                img=scene.orig_img["HH"], # Pass raw image for faster processing
-                sorted_data=scene.sorted_data["HH"],
-                land_nan_mask=scene.nan_mask["HH"],
-                s=display.contrast,
-                s_max=0.1,
-                ksize=5,
-                output_dtype=np.uint8
+                img_u8=scene.orig_img["HH"], # Pass raw image for faster processing
+                hist=scene.hist["HH"],
+                n_valid=scene.n_valid["HH"],
+                s=display.contrast
             )
 
             HV_contrasted = enhance_outlier_slider(
-                img=scene.orig_img["HV"], # Pass raw image for faster processing
-                sorted_data=scene.sorted_data["HV"],
-                land_nan_mask=scene.nan_mask["HV"],
-                s=display.contrast,
-                s_max=0.1,
-                ksize=5,
-                output_dtype=np.uint8
+                img_u8=scene.orig_img["HV"], # Pass raw image for faster processing
+                hist=scene.hist["HV"],
+                n_valid=scene.n_valid["HV"],
+                s=display.contrast
             )
 
             # Re-layer the imagery with new contrast
@@ -605,13 +596,10 @@ class Visualizer(ctk.CTk):
             )
         else:
             scene.img = enhance_outlier_slider(
-                img=scene.orig_img[display.channel_mode], # Pass raw image for faster processing
-                sorted_data=scene.sorted_data[display.channel_mode],
-                land_nan_mask=scene.nan_mask[display.channel_mode],
-                s=display.contrast,
-                s_max=0.1,
-                ksize=5,
-                output_dtype=np.uint8
+                img_u8=scene.orig_img[display.channel_mode], # Pass raw image for faster processing
+                hist=scene.hist[display.channel_mode],
+                n_valid=scene.n_valid[display.channel_mode],
+                s=display.contrast
             )
 
         self.refresh_view()

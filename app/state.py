@@ -46,7 +46,8 @@ class SceneState:
     cum_hist: dict[str, list[np.ndarray]] = field(default_factory=dict)
     bin_list: dict[str, list[np.ndarray]] = field(default_factory=dict)
     bands: dict[str, int] = field(default_factory=dict)
-    sorted_data: dict[str, np.ndarray] = field(default_factory=dict)
+    hist: dict[str, np.ndarray] = field(default_factory=dict)
+    n_valid: dict[str, np.ndarray] = field(default_factory=dict)
 
     predictions: dict[str, np.ndarray] = field(default_factory=dict)
     landmasks: dict[str, np.ndarray] = field(default_factory=dict)

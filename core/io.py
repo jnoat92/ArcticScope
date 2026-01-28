@@ -13,12 +13,13 @@ import sys
 import rasterio
 from lxml import etree
 from pathlib import Path
+import cv2
 
 from core.utils import rgb2gray, generate_boundaries, prepare_sorted_data_numba
 from core.parallel_stuff import Parallel
-from core.contrast_handler import prepare_sorted_data
+from core.contrast_handler import precompute_valid_hist_u8
 
-def PredictionLoader(iterator):
+def PredictionLoader(iterator, resize=False, img_shape=None):
     key, filename = iterator
 
     try:
@@ -26,11 +27,14 @@ def PredictionLoader(iterator):
     except FileNotFoundError as e:
         print(f"The selected directory does not contain the required prediction files. Please, select a valid directory.\n\n{e}")
         return key, None, None, None
-    
-    print("Pred shape:", pred.shape)
-    
+
     pred[(pred == [0, 0, 128]).all(axis=2)] = [0, 255, 255]
     pred[(pred == [128, 0, 0]).all(axis=2)] = [255, 130, 0]
+
+    if resize:
+        pred = cv2.resize(pred, (img_shape[1], img_shape[0]), interpolation=cv2.INTER_NEAREST)
+        pred = np.ascontiguousarray(pred)
+
     landmask = (pred == [255, 255, 255]).all(axis=2)
 
     boundmask = generate_boundaries(rgb2gray(pred))
@@ -88,21 +92,25 @@ def setup_base_images(HH, HV):
     nan_mask["HH"] = np.isnan(HH)
     nan_mask["HV"] = np.isnan(HV)
 
-    data_sorted = {}
-    # for img_type in img_base.keys():
-    #     print("Preparing sorted data for ", img_type)
-    #     data_sorted[img_type] = prepare_sorted_data_numba(img_base[img_type], valid_mask=~nan_mask[img_type])
-    return raw_img, img_base, data_sorted, nan_mask
+    hist = {}
+    n_valid = {}
+    for img_type in img_base.keys():
+        print("Preparing hist for ", img_type)
+        hist[img_type], n_valid[img_type] = precompute_valid_hist_u8(img_base[img_type], valid_mask=~nan_mask[img_type])
+    return raw_img, img_base, hist, n_valid, nan_mask
 
 
-def load_prediction(folder_path, filenames, lbl_source):
-
+def load_prediction(folder_path, filenames, lbl_source, img_shape):
+    resize_img = False
     file_names = [folder_path + f for f in filenames]
+
+    if folder_path.split("/")[-1].startswith("RCM"):
+        resize_img = True
     
     if len(lbl_source) > 1:
         variables = Parallel(PredictionLoader, zip(lbl_source, file_names))
     else:
-        variables = [PredictionLoader(zip(lbl_source[0], file_names[0]))]
+        variables = [PredictionLoader((lbl_source[0], file_names[0]), resize=resize_img, img_shape=img_shape)]
 
     return variables
 
@@ -193,7 +201,6 @@ def load_rcm_product(data_dir):
                 raise ValueError(f"expected 2 bands, found {src.count}")
             hh = src.read(1)
             hv = src.read(2)
-            print(f"hh shape: {hh.shape}, hv shape: {hv.shape}")
         
         # parse product.xml
         xml_root = etree.parse(str(xml_file)).getroot()
@@ -232,15 +239,28 @@ def load_rcm_product(data_dir):
                     "longitude": float(lon.text)
                 })
 
-        print("RCM product loaded successfully. Returning data...")
+        print("RCM product loaded successfully.")
+        
+        # Normalize HH band to uint8 for visualization
+        land_nan_mask_hh = np.isnan(hh)
+        min_ = hh[~land_nan_mask_hh].min(0)
+        max_ = hh[~land_nan_mask_hh].max(0)
+        hh = np.uint8(255*((hh - min_) / (max_ - min_)))
 
-        raw_img, img_base, data_sorted, nan_mask = setup_base_images(np.array(hh), np.array(hv))
-        print(type(hh[1,1]), type(hv[1,1]))
-        save_hh_img = Image.fromarray(hh, mode="F")
-        save_hh_img.save("hh_test.tiff")
+        # Normalize HV band to uint8 for visualization
+        land_nan_mask_hv = np.isnan(hv)
+        min_ = hv[~land_nan_mask_hv].min(0)
+        max_ = hv[~land_nan_mask_hv].max(0)
+        hv = np.uint8(255*((hv - min_) / (max_ - min_)))
 
-        save_hv_img = Image.fromarray(hv, mode="F")
-        save_hv_img.save("hv_test.tiff")
+        raw_img, img_base, hist, n_valid, nan_mask = setup_base_images(hh, hv)
+
+        # save_hh_img = Image.fromarray(hh)
+        # save_hh_img.save("hh_test.png")
+
+        # save_hv_img = Image.fromarray(hv)
+        # save_hv_img.save("hv_test.png")
+        print("Returning RCM product data.")
 
         return {
             "folder_name": data_dir,
@@ -250,7 +270,7 @@ def load_rcm_product(data_dir):
             "pixel_spacing": pixel_spacing,
             "geocoded_points": geocoded_points,
             "xml": xml_root
-        }, raw_img, img_base, data_sorted, nan_mask
+        }, raw_img, img_base, hist, n_valid, nan_mask
 
     except Exception as e:
         print(f"Skipping {data_dir}: {e}")
