@@ -1293,6 +1293,8 @@ class Visualizer(ctk.CTk):
         scene.predictions[scene.active_source][anno.selected_polygon_area_idx] = class_color
         scene.predictions[scene.active_source][scene.landmasks[scene.active_source]] = [255, 255, 255]
 
+        self.minimap.show_annotated_area(anno.selected_polygon_area_idx, color=class_color)
+
         img_y_min, img_y_max, img_x_min, img_x_max = anno.selected_polygon_window
         img_y_min = max(0, img_y_min-20)
         img_y_max = min(scene.predictions[scene.active_source].shape[0], img_y_max+20)
