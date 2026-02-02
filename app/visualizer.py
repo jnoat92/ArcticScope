@@ -758,6 +758,7 @@ class Visualizer(ctk.CTk):
                                                     scene.raw_img[overlay.local_segmentation_source]], axis=-1)[y_min:y_max, x_min:x_max]
 
         overlay.local_segmentation_limits = (x_min, y_min, x_max, y_max)
+        land_nan_mask_crop = scene.land_nan_masks[scene.active_source][y_min:y_max, x_min:x_max]
         # Disable select local segmentation mode after selection
         overlay.select_local_segmentation = False
 
@@ -770,7 +771,7 @@ class Visualizer(ctk.CTk):
 
         if result:
             # Run IRGS on the selected area
-            irgs_output, boundaries = IRGS(overlay.local_segmentation_area, n_classes=15, n_iter=120)
+            irgs_output, boundaries = IRGS(overlay.local_segmentation_area, n_classes=15, n_iter=120, mask=~land_nan_mask_crop)
             overlay.local_segmentation_mask = np.zeros_like(scene.boundmasks[scene.active_source], dtype=np.uint8)
             overlay.local_segmentation_mask[y_min:y_max, x_min:x_max] = irgs_output
             overlay.local_segmentation_mask = np.tile(overlay.local_segmentation_mask[:, :, np.newaxis], (1, 1, 3))
@@ -1069,6 +1070,11 @@ class Visualizer(ctk.CTk):
             anno.selected_polygon_window = (img_y_min, img_y_max, img_x_min, img_x_max)
             anno.selected_polygon_area_idx = tuple(zip(*anno.selected_polygon_area_idx))
 
+            # Check if selected area is all land/nan
+            if scene.land_nan_masks[scene.active_source][anno.selected_polygon_area_idx].all():
+                self.reset_annotation()
+                return
+            
             # draw polygon(s) on canvas
             anno.polygon_points_img_coor = [[(x, y) for y, x in c] for c in contours]
             anno.multiple_polygons = True
