@@ -175,5 +175,10 @@ class Minimap(ctk.CTkFrame):
         self.canvas.tag_raise("annotated_area")
         self.canvas.tag_raise(self.viewport_item)
 
+    def delete_annotated_areas(self):
+        self.canvas.delete("annotated_area")
+        if self.stored_area_idx is not None:
+            self.stored_area_idx = None  # Clear stored annotations
+
     def save_annotated_area(self, filepath):
         np.savez_compressed(filepath, area_idx=self.stored_area_idx)

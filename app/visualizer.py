@@ -518,6 +518,7 @@ class Visualizer(ctk.CTk):
                 scene.filenames.pop()
                 scene.lbl_sources.pop()
 
+            self.minimap.delete_annotated_areas()
             self.choose_image()
             self.load_pred()
             if not self.choose_lbl_source(plot=False):
