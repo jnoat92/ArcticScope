@@ -15,6 +15,10 @@ from lxml import etree
 from pathlib import Path
 import cv2
 from rasterio.warp import reproject, Resampling, calculate_default_transform
+import geopandas as gpd
+from rasterio.features import rasterize
+from shapely.geometry import box
+from shapely.ops import unary_union
 import torch
 from model.model_helper import Normalize_min_max, load_model, forward_model
 
@@ -288,11 +292,11 @@ def scale_hh_hv_to_200m(rcm_data, target_spacing_m=200):
         *rcm_data["src_bounds"],
         resolution=target_spacing_m
     )
- 
+
     # allocate outputs
     hh_200m = np.empty((dst_height, dst_width), dtype=np.float32)
     hv_200m = np.empty((dst_height, dst_width), dtype=np.float32)
- 
+
     # resample HH
     reproject(
         source=rcm_data["hh"],
@@ -305,7 +309,7 @@ def scale_hh_hv_to_200m(rcm_data, target_spacing_m=200):
         src_nodata=rcm_data["nodata_hh"],
         dst_nodata=np.nan
     )
- 
+
     # resample HV
     reproject(
         source=rcm_data["hv"],
@@ -318,12 +322,12 @@ def scale_hh_hv_to_200m(rcm_data, target_spacing_m=200):
         src_nodata=rcm_data["nodata_hv"],
         dst_nodata=np.nan
     )
- 
+
     # # create output folder inside product_dir
     # out_dir = product_dir / "200m_pixel_spacing"
     # out_dir.mkdir(exist_ok=True)
     # out_path = out_dir / (img_path.stem + "_200m.img")
- 
+
     # # save unified .img
     # with rasterio.open(
     #     out_path,
@@ -340,19 +344,31 @@ def scale_hh_hv_to_200m(rcm_data, target_spacing_m=200):
     #     dst.write(hv_200m, 2)
     #     dst.set_band_description(1, "HH")
     #     dst.set_band_description(2, "HV")
- 
-    return {"hh": hh_200m, "hv": hv_200m, "transform": dst_transform}
+
+    return {
+        "hh": hh_200m, 
+        "hv": hv_200m, 
+        "src_transform": dst_transform,
+        "src_crs": rcm_data["src_crs"],
+        "src_bounds": rcm_data["src_bounds"],
+        "folder_name": rcm_data["folder_name"]
+    }
 
 def load_rcm_base_images(data_dir):
 
     try:
         rcm_data = load_rcm_product(data_dir)
     except ValueError as e:
-        return e, {}, {}, {}, {}, {}
+        return e, {}, {}, {}, {}, {}, {}
     
     rcm_200m_data = scale_hh_hv_to_200m(rcm_data, target_spacing_m=200)
     hh = rcm_200m_data["hh"]
     hv = rcm_200m_data["hv"]
+
+    land_mask = build_land_masks(
+        resource_path("landmask/StatCan_ocean.shp"),
+        rcm_200m_data
+    )["land_mask"]
 
     # Normalize HH band to uint8 for visualization
     nan_mask_hh = np.isnan(hh)
@@ -383,9 +399,10 @@ def load_rcm_base_images(data_dir):
     hv = hv_u8
 
     raw_img, img_base, hist, n_valid, nan_mask = setup_base_images(hh, hv)
-    return raw_img, img_base, hist, n_valid, nan_mask, rcm_200m_data
 
-def run_pred_model(lbl_source, img, model_path, device='cpu'):
+    return raw_img, img_base, hist, n_valid, nan_mask, land_mask, rcm_200m_data
+
+def run_pred_model(lbl_source, img, land_mask, model_path, device='cpu'):
     valid_mask = ~np.isnan(img["hh"])
     img_norm = Normalize_min_max(np.stack([img["hh"], img["hv"]], axis=-1),
                              valid_mask=valid_mask)
@@ -396,11 +413,64 @@ def run_pred_model(lbl_source, img, model_path, device='cpu'):
 
     colored_pred_map = forward_model(model, img_norm, nan_mask=valid_mask) # make sure nan_mask is passed
 
-    landmask = (colored_pred_map == [255, 255, 255]).all(axis=2)
+    colored_pred_map[land_mask == True] = [255, 255, 255]  # Set land areas to white
+    colored_pred_map[valid_mask == False] = [255, 255, 255]  # Set NaN areas to white
+
+    land_nan_mask = ~valid_mask | land_mask
 
     boundmask = generate_boundaries(rgb2gray(colored_pred_map))
 
     # Save colored_pred_map
-    Image.fromarray(colored_pred_map).save("model_prediction.png")
+    #Image.fromarray(colored_pred_map).save("model_prediction.png")
 
-    return [(lbl_source, colored_pred_map, landmask, boundmask)]
+    return [(lbl_source, colored_pred_map, land_nan_mask, boundmask)]
+
+def build_land_masks(shp_path: str, rcm_product: list[dict]) -> dict:
+    """
+      - The shapefile polygons represent OCEAN (ocean=1), so land is the inverse.
+      - add boolean masks: True=land, False=other - to the dict  
+    """
+
+    # Read shapefile
+    gdf_raw = gpd.read_file(shp_path)
+
+    # Read SAR grid info from the rcm_product dict
+    hh = rcm_product["hh"]
+    transform = rcm_product["src_transform"]
+    crs = rcm_product["src_crs"]
+    bounds = rcm_product["src_bounds"]
+    folder_name = rcm_product["folder_name"]
+    shape = hh.shape
+
+    # Reproject shapefile to this rcm_product CRS
+    gdf = gdf_raw.to_crs(crs)
+
+    # SAR bbox polygon
+    sar_bbox = box(bounds.left, bounds.bottom, bounds.right, bounds.top)
+
+    # Keep only shapefile features that intersect the SAR bbox + Clip the shapefile geometry to the SAR bbox 
+    gdf = gdf[gdf.intersects(sar_bbox)].copy()
+    gdf["geometry"] = gdf.intersection(sar_bbox)
+    if len(gdf) == 0:
+        print(f"warning: {folder_name}: shapefile does not intersect bbox")
+        return None
+
+    # Merge polygons
+    geom = unary_union([g for g in gdf.geometry if g is not None and not g.is_empty])
+
+    # Rasterize ocean polygons to mask
+    ocean_mask = rasterize(
+        [(geom, 1)],
+        out_shape=shape,
+        transform=transform,
+        fill=0,
+        dtype=np.uint8,
+        all_touched=True,
+    ).astype(bool)
+
+    # Convert ocean-mask to land-mask (land=True, ocean=False)
+    land_mask = ~ocean_mask
+
+    rcm_product['land_mask'] = land_mask
+
+    return rcm_product

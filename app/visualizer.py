@@ -366,12 +366,12 @@ class Visualizer(ctk.CTk):
         anno = self.app_state.anno
 
         scene.predictions = {}
-        scene.landmasks = {}
+        scene.land_nan_masks = {}
         scene.boundmasks = {}
 
         if scene.folder_path.split("/")[-1].startswith("RCM"):
             model_path = resource_path("model/Unet_model_12_.pt")
-            variables = run_pred_model(scene.lbl_sources[0], scene.rcm_200m_data, model_path=model_path, device='cpu')
+            variables = run_pred_model(scene.lbl_sources[0], scene.rcm_200m_data, scene.base_land_mask, model_path=model_path, device='cpu')
         else:
             variables = load_prediction(scene.folder_path, scene.filenames, scene.lbl_sources, img_shape=scene.orig_img["HH"].shape)
         existing_anno, anno.annotation_notes, self.stored_area_idx = load_existing_annotation(scene.scene_name)
@@ -392,14 +392,14 @@ class Visualizer(ctk.CTk):
         self.mode_var_lbl_source_prev = None
 
         # Add available label sources
-        for i, (key, pred, landmask, boundmask) in enumerate(variables):
+        for i, (key, pred, land_nan_mask, boundmask) in enumerate(variables):
             if pred is None: 
                 if key != 'Custom_Annotation':
                     messagebox.showinfo("Error", f"The selected scene does not contain prediction files for {key}.", parent=self.master)
                 continue
             self.update_label_source_widgets(key, i)
             scene.predictions[key] = pred
-            scene.landmasks[key] = landmask
+            scene.land_nan_masks[key] = land_nan_mask
             scene.boundmasks[key] = boundmask
 
         custom_anno = "Custom_Annotation"
@@ -446,7 +446,7 @@ class Visualizer(ctk.CTk):
         overlay = self.app_state.overlay
         # NEXT STEP: Group the returns, and optimize crop_resize, right now it's the bottleneck for performance on contrast change
         self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, self.local_boundmask_resized, self.draw_x, self.draw_y = crop_resize(
-                    scene.predictions[scene.active_source], scene.img, scene.boundmasks[scene.active_source], scene.landmasks[scene.active_source], 
+                    scene.predictions[scene.active_source], scene.img, scene.boundmasks[scene.active_source], scene.land_nan_masks[scene.active_source], 
                     overlay.local_segmentation_bounds, view.zoom_factor, view.offset_x, view.offset_y, display.brightness,
                     self.canvas.winfo_width(), self.canvas.winfo_height(), overlay.show_local_segmentation)
         self.set_overlay()
@@ -484,15 +484,16 @@ class Visualizer(ctk.CTk):
             self.title(f"Scene {scene.scene_name}-{display.channel_mode}")
 
             if scene.scene_name.startswith("RCM"):
-                raw_img, orig_img, hist, n_valid, nan_mask, rcm_200m_data = load_rcm_base_images(scene.folder_path)
+                raw_img, orig_img, hist, n_valid, nan_mask, land_mask, rcm_200m_data = load_rcm_base_images(scene.folder_path)
             else:
-                raw_img, orig_img, hist, n_valid, nan_mask = load_base_images(scene.folder_path)
+                raw_img, orig_img, hist, n_valid, nan_mask = load_base_images(scene.folder_path)        
             # Save raw images to app state for later use (e.g., layering)
             scene.raw_img = raw_img
             scene.orig_img = orig_img
             scene.hist = hist
             scene.n_valid = n_valid
             scene.nan_mask = nan_mask
+            scene.base_land_mask = land_mask if scene.scene_name.startswith("RCM") else None
             scene.rcm_200m_data = rcm_200m_data if scene.scene_name.startswith("RCM") else None
 
             if isinstance(raw_img, FileNotFoundError) or isinstance(raw_img, ValueError):
@@ -1272,6 +1273,10 @@ class Visualizer(ctk.CTk):
             else:
                 messagebox.showinfo("Error", "Please select a polygon area first.", parent=self.master)
                 return
+        elif scene.land_nan_masks[scene.active_source][anno.selected_polygon_area_idx].all():
+            messagebox.showinfo("Error", "Selected area is land or invalid data.", parent=self.master)
+            self.reset_annotation()
+            return
         
         # Check if this area is already annotated with the selected class.
         if (scene.predictions[scene.active_source][anno.selected_polygon_area_idx] == class_color).all():
@@ -1281,7 +1286,7 @@ class Visualizer(ctk.CTk):
         key = "Custom_Annotation"
 
         scene.predictions[key] = scene.predictions[scene.active_source].copy()
-        scene.landmasks[key] = scene.landmasks[scene.active_source].copy()
+        scene.land_nan_masks[key] = scene.land_nan_masks[scene.active_source].copy()
         scene.boundmasks[key] = scene.boundmasks[scene.active_source].copy()
         scene.active_source = key
 
@@ -1303,9 +1308,12 @@ class Visualizer(ctk.CTk):
 
         self.mode_var_lbl_source.set(key)   # set custom annotation as current label source
         scene.predictions[scene.active_source][anno.selected_polygon_area_idx] = class_color
-        scene.predictions[scene.active_source][scene.landmasks[scene.active_source]] = [255, 255, 255]
+        scene.predictions[scene.active_source][scene.land_nan_masks[scene.active_source]] = [255, 255, 255]
 
-        self.minimap.show_annotated_area(anno.selected_polygon_area_idx)
+        # Show annotated area on minimap (excluding land and invalid areas)
+        valid_polygon_idx = tuple(zip(*[(y, x) for y, x in zip(*anno.selected_polygon_area_idx) if not scene.land_nan_masks[scene.active_source][y, x]]))
+
+        self.minimap.show_annotated_area(valid_polygon_idx)
 
         img_y_min, img_y_max, img_x_min, img_x_max = anno.selected_polygon_window
         img_y_min = max(0, img_y_min-20)

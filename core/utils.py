@@ -31,9 +31,9 @@ def blend_overlay(pred, img, boundmask, landmask, local_boundmask, alpha):
     for y in prange(h):
         for x in range(w):
             if landmask[y, x]:
-                out[y, x, 0] = 255
-                out[y, x, 1] = 255
-                out[y, x, 2] = 255
+                out[y, x, 0] = img[y, x, 0]
+                out[y, x, 1] = img[y, x, 1]
+                out[y, x, 2] = img[y, x, 2]
             elif boundmask[y, x]:
                 out[y, x, :] = pred[y, x, :]
             elif local_boundmask is not None and local_boundmask[y, x]:
