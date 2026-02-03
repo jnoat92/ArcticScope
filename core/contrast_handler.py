@@ -199,12 +199,6 @@ def enhance_outlier_slider(
     H, W, C = img3.shape
     assert hist.shape[0] == C and hist.shape[1] == 256
 
-    # Clamp slider range
-    if s < 0.0:
-        s = 0.0
-    elif s > 0.25:
-        s = 0.25
-
     # Near-zero -> return original quickly
     if s == 0.0:
         out3 = img3.copy()

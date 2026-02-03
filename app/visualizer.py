@@ -137,9 +137,9 @@ class Visualizer(ctk.CTk):
         )
         self.contrast_slider = ctk.CTkSlider(
             self.select_image_frame,
-            from_=20,
-            to=100,
-            number_of_steps=10,
+            from_=0,
+            to=200,
+            number_of_steps=200,
             width=100,
             command=self.contrast_slider_handle
         )
@@ -535,7 +535,7 @@ class Visualizer(ctk.CTk):
         else:
             scene.folder_path = prev_folder_path
 
-        self.contrast_slider.set(20) # reset to default
+        self.contrast_slider.set(0) # reset to default
         self.app_state.display.contrast = 0.0
         self.brightness_slider.set(0) # reset to default
         self.app_state.display.brightness = 0.0
@@ -580,10 +580,8 @@ class Visualizer(ctk.CTk):
     def contrast_slider_handle(self, val):
         scene = self.app_state.scene
         display = self.app_state.display
-        if val <= 20: # Initial state
-            val = 0.0
 
-        display.contrast = (val/100) * 0.25
+        display.contrast = (val/200) * 0.15
 
         if display.channel_mode in ["(HH, HH, HV)", "(HH, HV, HV)"]:
             HH_contrasted = enhance_outlier_slider(
@@ -626,9 +624,9 @@ class Visualizer(ctk.CTk):
                 self.annotation_panel.update_zoomed_display()
 
     def right_click_contrast_reset(self, event):
-        self.contrast_slider.set(20) # reset to default
+        self.contrast_slider.set(0) # reset to default
         self.app_state.display.contrast = 0.0
-        self.contrast_slider_handle(20)
+        self.contrast_slider_handle(0)
         self.refresh_view()
 
         if self.app_state.anno.polygon_points_img_coor: 

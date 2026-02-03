@@ -86,7 +86,7 @@ def load_base_images(folder_path):
 
     return setup_base_images(HH, HV)
 
-def setup_base_images(HH, HV):
+def setup_base_images(HH, HV, nan_mask_hh, nan_mask_hv):
     raw_img = {}
     raw_img["HH"] = HH
     raw_img["HV"] = HV
@@ -96,8 +96,8 @@ def setup_base_images(HH, HV):
     img_base["HV"] = np.tile(HV[:,:,np.newaxis], (1,1,3))
 
     nan_mask = {}
-    nan_mask["HH"] = np.isnan(HH)
-    nan_mask["HV"] = np.isnan(HV)
+    nan_mask["HH"] = nan_mask_hh
+    nan_mask["HV"] = nan_mask_hv
 
     hist = {}
     n_valid = {}
@@ -398,7 +398,7 @@ def load_rcm_base_images(data_dir):
 
     hv = hv_u8
 
-    raw_img, img_base, hist, n_valid, nan_mask = setup_base_images(hh, hv)
+    raw_img, img_base, hist, n_valid, nan_mask = setup_base_images(hh, hv, nan_mask_hh, nan_mask_hv)
 
     return raw_img, img_base, hist, n_valid, nan_mask, land_mask, rcm_200m_data
 
