@@ -128,19 +128,6 @@ def load_existing_annotation(scene_name):
     else:
         return None, notes, minimap_area_idx
     
-def map_src_pixel_to_dst_pixel(row, col, src_transform, src_crs, dst_transform, dst_crs):
-    # pixel -> world (src CRS)
-    x, y = xy(src_transform, row, col, offset="center")
-
-    # world (src CRS) -> world (dst CRS)
-    if src_crs != dst_crs:
-        transformer = Transformer.from_crs(src_crs, dst_crs, always_xy=True)
-        x, y = transformer.transform(x, y)
-
-    # world (dst CRS) -> pixel (dst)
-    row2, col2 = rowcol(dst_transform, x, y)
-    return row2, col2
-    
 def load_rcm_product(data_dir):
     """
     Load and parse RCM (Radarsat Constellation Mission) SAR product data.
@@ -278,17 +265,6 @@ def scale_hh_hv_to_200m(rcm_data, target_spacing_m=200):
         resolution=target_spacing_m
     )
 
-    mapped_geocoded_points = []
-    
-    for point in rcm_data["geocoded_points"]:  # each point has "line","pixel","latitude","longitude"
-        row, col = map_src_pixel_to_dst_pixel(
-            point["line"], point["pixel"],
-            rcm_data["src_transform"], rcm_data["src_crs"],
-            dst_transform, rcm_data["src_crs"]
-        )
-
-        mapped_geocoded_points.append({**point, "line_dst": row, "pixel_dst": col})
-
     # allocate outputs
     hh_200m = np.empty((dst_height, dst_width), dtype=np.float32)
     hv_200m = np.empty((dst_height, dst_width), dtype=np.float32)
@@ -319,6 +295,9 @@ def scale_hh_hv_to_200m(rcm_data, target_spacing_m=200):
         dst_nodata=np.nan
     )
 
+    # Create transformer for geocoding later
+    transformer = Transformer.from_crs(rcm_data["src_crs"], "EPSG:4326", always_xy=True)
+    
     # # create output folder inside product_dir
     # out_dir = product_dir / "200m_pixel_spacing"
     # out_dir.mkdir(exist_ok=True)
@@ -343,14 +322,14 @@ def scale_hh_hv_to_200m(rcm_data, target_spacing_m=200):
 
     return {
         "hh": hh_200m, 
-        "hv": hv_200m, 
-        "geocoded_points": mapped_geocoded_points,
+        "hv": hv_200m,
         "src_transform": dst_transform,
         "src_crs": rcm_data["src_crs"],
         "src_bounds": rcm_data["src_bounds"],
         "folder_name": rcm_data["folder_name"],
         "dst_height": dst_height,
-        "dst_width": dst_width
+        "dst_width": dst_width,
+        "transformer": transformer
     }
 
 def load_rcm_base_images(data_dir):
@@ -364,44 +343,10 @@ def load_rcm_base_images(data_dir):
     hh = rcm_200m_data["hh"]
     hv = rcm_200m_data["hv"]
 
-    # Generate geocoded grid (lat/lon) for all pixels
-    line = np.array([pt["line_dst"] for pt in rcm_200m_data["geocoded_points"]])
-    pixel = np.array([pt["pixel_dst"] for pt in rcm_200m_data["geocoded_points"]])
-    latitude = np.array([pt["latitude"] for pt in rcm_200m_data["geocoded_points"]])
-    longitude = np.array([pt["longitude"] for pt in rcm_200m_data["geocoded_points"]])
-
-    pts = np.column_stack([pixel, line])
-
-    lon_rad = np.deg2rad(longitude)
-    lon_cos = np.cos(lon_rad)
-    lon_sin = np.sin(lon_rad)
-
-    H, W = rcm_200m_data["dst_height"], rcm_200m_data["dst_width"]
-
-    grid_cols, grid_rows = np.meshgrid(np.arange(W), np.arange(H))
-    grid_pts = (grid_cols, grid_rows)
-
-    # lat interpolation (scattered -> grid)
-    lat_grid = griddata(pts, latitude, grid_pts, method="linear")
-
-    # lon via cos/sin
-    cos_grid = griddata(pts, lon_cos, grid_pts, method="linear")
-    sin_grid = griddata(pts, lon_sin, grid_pts, method="linear")
-
-    lon_grid = np.rad2deg(np.arctan2(sin_grid, cos_grid))
-
-    # Handle NaNs by nearest-neighbor interpolation
-    lat_nn = griddata(pts, latitude, grid_pts, method="nearest")
-    cos_nn = griddata(pts, lon_cos, grid_pts, method="nearest")
-    sin_nn = griddata(pts, lon_sin, grid_pts, method="nearest")
-    lon_nn = np.rad2deg(np.arctan2(sin_nn, cos_nn))
-
-    lat_grid = np.where(np.isfinite(lat_grid), lat_grid, lat_nn)
-    lon_grid = np.where(np.isfinite(lon_grid), lon_grid, lon_nn)
-    print(lat_grid[0, 0], lon_grid[0, 0])
-    print(lat_grid[-1, -1], lon_grid[-1, -1])
-
-    geo_coords = {"latitude": lat_grid, "longitude": lon_grid}
+    # Helpful geocoding info for transforming pixel->lat/lon
+    geo_coord_helpers = {"dst_transform": rcm_200m_data["src_transform"],
+                  "dst_crs": rcm_200m_data["src_crs"],
+                  "transformer": rcm_200m_data["transformer"]}
 
     land_mask = build_land_masks(
         resource_path("landmask/StatCan_ocean.shp"),
@@ -438,7 +383,7 @@ def load_rcm_base_images(data_dir):
 
     raw_img, img_base, hist, n_valid, nan_mask = setup_base_images(hh, hv, nan_mask_hh, nan_mask_hv)
 
-    return raw_img, img_base, hist, n_valid, nan_mask, land_mask, rcm_200m_data, geo_coords
+    return raw_img, img_base, hist, n_valid, nan_mask, land_mask, rcm_200m_data, geo_coord_helpers
 
 def run_pred_model(lbl_source, img, land_mask, model_path, device='cpu'):
     valid_mask = ~np.isnan(img["hh"])

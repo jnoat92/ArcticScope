@@ -58,7 +58,7 @@ class SceneState:
     base_land_mask: np.ndarray = None
 
     # Store geocoded bounds
-    geocoded_points: dict[str, float] = field(default_factory=dict)
+    geo_coord_helpers: dict[str, float] = field(default_factory=dict)
 
     # Store currently selected prediction
     active_source: str = ""

@@ -12,6 +12,7 @@ from PIL import Image, ImageTk
 import numpy as np
 import cv2
 import os
+from rasterio.transform import xy
 
 from ui.evaluation import EvaluationPanel
 from ui.annotation import AnnotationPanel
@@ -315,16 +316,19 @@ class Visualizer(ctk.CTk):
         self.sidebar.grid_rowconfigure(2, weight=1)
         self.sidebar.grid_columnconfigure(0, weight=1)
 
-        # Minimap in bottom-right corner of canvas
+        # Minimap frame housing minimap and status bar
         self.minimap_frame = ctk.CTkFrame(self.canvas, width=200, height=200, corner_radius=12)
+        
+        # Coords on top of minimap
+        self.status_bar = ctk.CTkLabel(self.minimap_frame, width=200,text="-, -", bg_color="black", text_color="white", font=ctk.CTkFont(size=12))
+        self.status_bar.pack(fill="both", expand=True, anchor = "center")
+
+        # Minimap in bottom-right corner of canvas
         self.minimap = Minimap(self.minimap_frame, w=200, h=200)
         self.minimap.pack(fill="both", expand=True)
         self.minimap_window_id = self.canvas.create_window(0, 0, window=self.minimap_frame, anchor="se", tags=("minimap"))
         self.canvas.bind("<Configure>", self._update_minimap_position)
         
-        # Coords on top of minimap
-        self.status_bar = ctk.CTkLabel(self.minimap_frame, width=200,text="-, -", bg_color="black", text_color="white", font=ctk.CTkFont(size=10))
-        self.status_bar.pack(fill="both", expand=True)
 
 
         #%% INITIAL VISUALIZATION / STATE
@@ -486,22 +490,23 @@ class Visualizer(ctk.CTk):
             self.title(f"Scene {scene.scene_name}-{display.channel_mode}")
 
             # Load base images
-            raw_img, orig_img, hist, n_valid, nan_mask, land_mask, rcm_200m_data, geo_coords = load_rcm_base_images(scene.folder_path)       
-            # Save raw images to app state for later use (e.g., layering)
-            scene.raw_img = raw_img
-            scene.orig_img = orig_img
-            scene.hist = hist
-            scene.n_valid = n_valid
-            scene.nan_mask = nan_mask
-            scene.base_land_mask = land_mask
-            scene.rcm_200m_data = rcm_200m_data
-            scene.geocoded_points = geo_coords
+            raw_img, orig_img, hist, n_valid, nan_mask, land_mask, rcm_200m_data, geo_coord_helpers = load_rcm_base_images(scene.folder_path)       
 
             if isinstance(raw_img, FileNotFoundError) or isinstance(raw_img, ValueError):
                 messagebox.showinfo("Error", f"The selected directory does not contain the required files. Please, select a valid directory.\n\n{raw_img}", parent=self.master)
                 scene.folder_path = ''
                 return
             else:
+                # Save raw images to app state for later use (e.g., layering)
+                scene.raw_img = raw_img
+                scene.orig_img = orig_img
+                scene.hist = hist
+                scene.n_valid = n_valid
+                scene.nan_mask = nan_mask
+                scene.base_land_mask = land_mask
+                scene.rcm_200m_data = rcm_200m_data
+                scene.geo_coord_helpers = geo_coord_helpers
+
                 self.img_ = orig_img
                 
                 self.img_["(HH, HH, HV)"] = layer_imagery(
@@ -1098,14 +1103,18 @@ class Visualizer(ctk.CTk):
             h, w = scene.predictions[scene.active_source].shape[:2]
             if not (0 <= x < w and 0 <= y < h):
                 self.status_bar.configure(text=f"Lat: N/A, Lon: N/A")
-            # elif scene.nan_mask["HH"][y, x]:
-            #     self.status_bar.configure(text=f"Lat: N/A, Lon: N/A")
+            elif scene.nan_mask["HH"][y, x]:
+                self.status_bar.configure(text=f"Lat: N/A, Lon: N/A")
             else:
-                lat = scene.geocoded_points['latitude'][y, x]
-                lon = scene.geocoded_points['longitude'][y, x]
+                # Convert downscaled image coordinates to original image coordinates
+                # x and y (row and col) are flipped so flip back before geocoding
+                x, y = xy(scene.geo_coord_helpers["dst_transform"], y, x, offset="center")
+                # Convert image coordinates to geographic coordinates (lat/lon)
+                lon, lat = scene.geo_coord_helpers["transformer"].transform(x, y)
+                # Convert lat and lon to DMS format
                 lat_dms = self.decimal_to_dms(lat, is_latitude=True)
                 lon_dms = self.decimal_to_dms(lon, is_latitude=False)
-                self.status_bar.configure(text=f"Lat: {lat:.4f}, Lon: {lon:.4f}\n{lat_dms}, {lon_dms}\n Pixel: ({x}, {y})")
+                self.status_bar.configure(text=f"Lat: {lat:.4f}, Lon: {lon:.4f}\n{lat_dms} {lon_dms}")
 
 
     # Operations
