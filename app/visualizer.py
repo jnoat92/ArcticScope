@@ -12,12 +12,13 @@ from PIL import Image, ImageTk
 import numpy as np
 import cv2
 import os
+from rasterio.transform import xy
 
 from ui.evaluation import EvaluationPanel
 from ui.annotation import AnnotationPanel
 from ui.minimap import Minimap
 from core.utils import rgb2gray, generate_boundaries
-from core.io import load_prediction, load_existing_annotation, load_base_images
+from core.io import load_existing_annotation, load_rcm_base_images, run_pred_model, resource_path
 from core.segmentation import get_segment_contours, IRGS
 from core.overlay import compose_overlay
 from core.render import crop_resize, layer_imagery
@@ -81,6 +82,7 @@ class Visualizer(ctk.CTk):
 
         self.canvas.bind("<Button-3>", self.on_right_click)
         self.canvas.bind("<Double-Button-1>", self.on_double_click)
+        self.canvas.bind("<Motion>", self.on_mouse_move)
 
 
         # ==================== CONTROL PANELS (STACKED VERTICALLY)
@@ -137,9 +139,9 @@ class Visualizer(ctk.CTk):
         )
         self.contrast_slider = ctk.CTkSlider(
             self.select_image_frame,
-            from_=20,
-            to=100,
-            number_of_steps=10,
+            from_=0,
+            to=200,
+            number_of_steps=200,
             width=100,
             command=self.contrast_slider_handle
         )
@@ -245,13 +247,13 @@ class Visualizer(ctk.CTk):
         self.app_state.scene.lbl_sources = [
             "Unet+ITT_pixel",
             # "Unet+ITT_pixel+MV",
-            "Unet+ITT_region",
+            # "Unet+ITT_region",
             # "Results_Major"
         ]
         filenames_ = [
             "colored_predict_cnn.png",
             # "CNN_colored_m_v_per_CC.png",
-            "colored_predict_transformer.png",
+            # "colored_predict_transformer.png",
             # "resnet.png"
         ]
         self.app_state.scene.filenames = ["/{}/{}".format(lbl_s, file)
@@ -314,12 +316,19 @@ class Visualizer(ctk.CTk):
         self.sidebar.grid_rowconfigure(2, weight=1)
         self.sidebar.grid_columnconfigure(0, weight=1)
 
+        # Minimap frame housing minimap and status bar
+        self.minimap_frame = ctk.CTkFrame(self.canvas, width=200, height=200, corner_radius=12)
+        
+        # Coords on top of minimap
+        self.status_bar = ctk.CTkLabel(self.minimap_frame, width=200,text="-, -", bg_color="black", text_color="white", font=ctk.CTkFont(size=12))
+        self.status_bar.pack(fill="both", expand=True, anchor = "center")
+
         # Minimap in bottom-right corner of canvas
-        self.minimap_frame = ctk.CTkFrame(self.canvas, width=180, height=180, corner_radius=12)
-        self.minimap = Minimap(self.minimap_frame, w=180, h=180)
+        self.minimap = Minimap(self.minimap_frame, w=200, h=200)
         self.minimap.pack(fill="both", expand=True)
         self.minimap_window_id = self.canvas.create_window(0, 0, window=self.minimap_frame, anchor="se", tags=("minimap"))
         self.canvas.bind("<Configure>", self._update_minimap_position)
+        
 
 
         #%% INITIAL VISUALIZATION / STATE
@@ -366,11 +375,12 @@ class Visualizer(ctk.CTk):
         anno = self.app_state.anno
 
         scene.predictions = {}
-        scene.landmasks = {}
+        scene.land_nan_masks = {}
         scene.boundmasks = {}
 
-        variables = load_prediction(scene.folder_path, scene.filenames, scene.lbl_sources)
-        existing_anno, anno.annotation_notes = load_existing_annotation(scene.scene_name)
+        model_path = resource_path("model/Unet_model_12_.pt")
+        variables = run_pred_model(scene.lbl_sources[0], scene.rcm_200m_data, scene.base_land_mask, model_path=model_path, device='cpu')
+        existing_anno, anno.annotation_notes, self.stored_area_idx = load_existing_annotation(scene.scene_name)
 
         if existing_anno is not None:
             variables.append(existing_anno)
@@ -388,14 +398,14 @@ class Visualizer(ctk.CTk):
         self.mode_var_lbl_source_prev = None
 
         # Add available label sources
-        for i, (key, pred, landmask, boundmask) in enumerate(variables):
+        for i, (key, pred, land_nan_mask, boundmask) in enumerate(variables):
             if pred is None: 
                 if key != 'Custom_Annotation':
                     messagebox.showinfo("Error", f"The selected scene does not contain prediction files for {key}.", parent=self.master)
                 continue
             self.update_label_source_widgets(key, i)
             scene.predictions[key] = pred
-            scene.landmasks[key] = landmask
+            scene.land_nan_masks[key] = land_nan_mask
             scene.boundmasks[key] = boundmask
 
         custom_anno = "Custom_Annotation"
@@ -407,6 +417,10 @@ class Visualizer(ctk.CTk):
                 scene.active_source = custom_anno
                 self.mode_var_lbl_source.set(custom_anno)
 
+        # Show made annotations on minimap
+        if self.stored_area_idx is not None:
+            self.minimap.stored_area_idx = self.stored_area_idx
+            self.minimap.show_annotated_area(np.where(self.stored_area_idx))
 
     # Display handle
 
@@ -438,8 +452,8 @@ class Visualizer(ctk.CTk):
         overlay = self.app_state.overlay
         # NEXT STEP: Group the returns, and optimize crop_resize, right now it's the bottleneck for performance on contrast change
         self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, self.local_boundmask_resized, self.draw_x, self.draw_y = crop_resize(
-                    scene.predictions[scene.active_source], scene.img, scene.boundmasks[scene.active_source], scene.landmasks[scene.active_source], 
-                    overlay.local_segmentation_bounds, view.zoom_factor, view.offset_x, view.offset_y, display.brightness,
+                    scene.predictions[scene.active_source], scene.img, scene.boundmasks[scene.active_source], scene.land_nan_masks[scene.active_source], 
+                    overlay.local_segmentation_bounds, scene.nan_mask["HH"], view.zoom_factor, view.offset_x, view.offset_y, display.brightness,
                     self.canvas.winfo_width(), self.canvas.winfo_height(), overlay.show_local_segmentation)
         self.set_overlay()
         self.display_image()
@@ -475,18 +489,24 @@ class Visualizer(ctk.CTk):
 
             self.title(f"Scene {scene.scene_name}-{display.channel_mode}")
 
-            raw_img, orig_img, sorted_data, nan_mask = load_base_images(scene.folder_path)
-            # Save raw images to app state for later use (e.g., layering)
-            scene.raw_img = raw_img
-            scene.orig_img = orig_img
-            scene.sorted_data = sorted_data
-            scene.nan_mask = nan_mask
+            # Load base images
+            raw_img, orig_img, hist, n_valid, nan_mask, land_mask, rcm_200m_data, geo_coord_helpers = load_rcm_base_images(scene.folder_path)       
 
-            if isinstance(raw_img, FileNotFoundError):
+            if isinstance(raw_img, FileNotFoundError) or isinstance(raw_img, ValueError):
                 messagebox.showinfo("Error", f"The selected directory does not contain the required files. Please, select a valid directory.\n\n{raw_img}", parent=self.master)
                 scene.folder_path = ''
                 return
             else:
+                # Save raw images to app state for later use (e.g., layering)
+                scene.raw_img = raw_img
+                scene.orig_img = orig_img
+                scene.hist = hist
+                scene.n_valid = n_valid
+                scene.nan_mask = nan_mask
+                scene.base_land_mask = land_mask
+                scene.rcm_200m_data = rcm_200m_data
+                scene.geo_coord_helpers = geo_coord_helpers
+
                 self.img_ = orig_img
                 
                 self.img_["(HH, HH, HV)"] = layer_imagery(
@@ -505,6 +525,7 @@ class Visualizer(ctk.CTk):
                 scene.filenames.pop()
                 scene.lbl_sources.pop()
 
+            self.minimap.delete_annotated_areas()
             self.choose_image()
             self.load_pred()
             if not self.choose_lbl_source(plot=False):
@@ -520,7 +541,7 @@ class Visualizer(ctk.CTk):
         else:
             scene.folder_path = prev_folder_path
 
-        self.contrast_slider.set(20) # reset to default
+        self.contrast_slider.set(0) # reset to default
         self.app_state.display.contrast = 0.0
         self.brightness_slider.set(0) # reset to default
         self.app_state.display.brightness = 0.0
@@ -565,29 +586,22 @@ class Visualizer(ctk.CTk):
     def contrast_slider_handle(self, val):
         scene = self.app_state.scene
         display = self.app_state.display
-        if val <= 20: # Initial state
-            val = 0.0
-        display.contrast = float(val)/1000
+
+        display.contrast = (val/200) * 0.15
 
         if display.channel_mode in ["(HH, HH, HV)", "(HH, HV, HV)"]:
             HH_contrasted = enhance_outlier_slider(
-                img=scene.orig_img["HH"], # Pass raw image for faster processing
-                sorted_data=scene.sorted_data["HH"],
-                land_nan_mask=scene.nan_mask["HH"],
-                s=display.contrast,
-                s_max=0.1,
-                ksize=5,
-                output_dtype=np.uint8
+                img_u8=scene.orig_img["HH"], # Pass raw image for faster processing
+                hist=scene.hist["HH"],
+                n_valid=scene.n_valid["HH"],
+                s=display.contrast
             )
 
             HV_contrasted = enhance_outlier_slider(
-                img=scene.orig_img["HV"], # Pass raw image for faster processing
-                sorted_data=scene.sorted_data["HV"],
-                land_nan_mask=scene.nan_mask["HV"],
-                s=display.contrast,
-                s_max=0.1,
-                ksize=5,
-                output_dtype=np.uint8
+                img_u8=scene.orig_img["HV"], # Pass raw image for faster processing
+                hist=scene.hist["HV"],
+                n_valid=scene.n_valid["HV"],
+                s=display.contrast
             )
 
             # Re-layer the imagery with new contrast
@@ -598,13 +612,10 @@ class Visualizer(ctk.CTk):
             )
         else:
             scene.img = enhance_outlier_slider(
-                img=scene.orig_img[display.channel_mode], # Pass raw image for faster processing
-                sorted_data=scene.sorted_data[display.channel_mode],
-                land_nan_mask=scene.nan_mask[display.channel_mode],
-                s=display.contrast,
-                s_max=0.1,
-                ksize=5,
-                output_dtype=np.uint8
+                img_u8=scene.orig_img[display.channel_mode], # Pass raw image for faster processing
+                hist=scene.hist[display.channel_mode],
+                n_valid=scene.n_valid[display.channel_mode],
+                s=display.contrast
             )
 
         self.refresh_view()
@@ -619,9 +630,9 @@ class Visualizer(ctk.CTk):
                 self.annotation_panel.update_zoomed_display()
 
     def right_click_contrast_reset(self, event):
-        self.contrast_slider.set(20) # reset to default
+        self.contrast_slider.set(0) # reset to default
         self.app_state.display.contrast = 0.0
-        self.contrast_slider_handle(20)
+        self.contrast_slider_handle(0)
         self.refresh_view()
 
         if self.app_state.anno.polygon_points_img_coor: 
@@ -751,6 +762,7 @@ class Visualizer(ctk.CTk):
                                                     scene.raw_img[overlay.local_segmentation_source]], axis=-1)[y_min:y_max, x_min:x_max]
 
         overlay.local_segmentation_limits = (x_min, y_min, x_max, y_max)
+        land_nan_mask_crop = scene.land_nan_masks[scene.active_source][y_min:y_max, x_min:x_max]
         # Disable select local segmentation mode after selection
         overlay.select_local_segmentation = False
 
@@ -763,7 +775,7 @@ class Visualizer(ctk.CTk):
 
         if result:
             # Run IRGS on the selected area
-            irgs_output, boundaries = IRGS(overlay.local_segmentation_area, n_classes=15, n_iter=120)
+            irgs_output, boundaries = IRGS(overlay.local_segmentation_area, n_classes=15, n_iter=120, mask=~land_nan_mask_crop)
             overlay.local_segmentation_mask = np.zeros_like(scene.boundmasks[scene.active_source], dtype=np.uint8)
             overlay.local_segmentation_mask[y_min:y_max, x_min:x_max] = irgs_output
             overlay.local_segmentation_mask = np.tile(overlay.local_segmentation_mask[:, :, np.newaxis], (1, 1, 3))
@@ -953,6 +965,9 @@ class Visualizer(ctk.CTk):
             img_x_max = min(scene.img.shape[1], img_x_max)
             img_y_max = min(scene.img.shape[0], img_y_max)
 
+            if img_x_max < 0 or img_y_max < 0 or img_x_min < 0 or img_y_min < 0:
+                return  # invalid selection
+
             self.zoom_to_rectangle(img_x_min, img_y_min, img_x_max, img_y_max)
 
         elif overlay.select_local_segmentation and self.selection_start_coord:
@@ -981,6 +996,9 @@ class Visualizer(ctk.CTk):
             img_y_min = max(0, img_y_min)
             img_x_max = min(scene.img.shape[1], img_x_max)
             img_y_max = min(scene.img.shape[0], img_y_max)
+
+            if img_x_max < 0 or img_y_max < 0 or img_x_min < 0 or img_y_min < 0:
+                return  # invalid selection
 
             self.select_local_segmentation_area(img_x_min, img_y_min, img_x_max, img_y_max)
         
@@ -1043,6 +1061,14 @@ class Visualizer(ctk.CTk):
             if overlay.show_local_segmentation:
                 # Change scene.predictions to local irgs for unsupervised segmentation
                 contours, mask = get_segment_contours(overlay.local_segmentation_mask, y, x)
+
+                # Check if selected segment includes border region
+                for i in range(len(contours)):
+                    for j in range(len(contours[i])):
+                        if contours[i][j][1] <= overlay.local_segmentation_limits[0]+0.5 or contours[i][j][1] >= overlay.local_segmentation_limits[2]-0.5 or \
+                            contours[i][j][0] <= overlay.local_segmentation_limits[1]+0.5 or contours[i][j][0] >= overlay.local_segmentation_limits[3]-0.5:
+                            self.reset_annotation()
+                            return
             else:
                 # Change scene,predictions to irgs for unsupervised segmentation
                 contours, mask = get_segment_contours(scene.predictions[scene.active_source], y, x)
@@ -1056,10 +1082,39 @@ class Visualizer(ctk.CTk):
             anno.selected_polygon_window = (img_y_min, img_y_max, img_x_min, img_x_max)
             anno.selected_polygon_area_idx = tuple(zip(*anno.selected_polygon_area_idx))
 
+            # Check if selected area is all land/nan
+            if scene.land_nan_masks[scene.active_source][anno.selected_polygon_area_idx].all():
+                self.reset_annotation()
+                return
+            
             # draw polygon(s) on canvas
             anno.polygon_points_img_coor = [[(x, y) for y, x in c] for c in contours]
             anno.multiple_polygons = True
             self.draw_polygon_on_canvas()
+
+    def on_mouse_move(self, event):
+        view = self.app_state.view
+        scene = self.app_state.scene
+        x = int((event.x - view.offset_x) / view.zoom_factor)
+        y = int((event.y - view.offset_y) / view.zoom_factor)
+
+        # Check if coordinates are nan or out of bounds
+        if scene.img is not None:
+            h, w = scene.predictions[scene.active_source].shape[:2]
+            if not (0 <= x < w and 0 <= y < h):
+                self.status_bar.configure(text=f"Lat: N/A, Lon: N/A")
+            elif scene.nan_mask["HH"][y, x]:
+                self.status_bar.configure(text=f"Lat: N/A, Lon: N/A")
+            else:
+                # Convert downscaled image coordinates to original image coordinates
+                # x and y (row and col) are flipped so flip back before geocoding
+                x, y = xy(scene.geo_coord_helpers["dst_transform"], y, x, offset="center")
+                # Convert image coordinates to geographic coordinates (lat/lon)
+                lon, lat = scene.geo_coord_helpers["transformer"].transform(x, y)
+                # Convert lat and lon to DMS format
+                lat_dms = self.decimal_to_dms(lat, is_latitude=True)
+                lon_dms = self.decimal_to_dms(lon, is_latitude=False)
+                self.status_bar.configure(text=f"Lat: {lat:.4f}, Lon: {lon:.4f}\n{lat_dms} {lon_dms}")
 
 
     # Operations
@@ -1260,6 +1315,10 @@ class Visualizer(ctk.CTk):
             else:
                 messagebox.showinfo("Error", "Please select a polygon area first.", parent=self.master)
                 return
+        elif scene.land_nan_masks[scene.active_source][anno.selected_polygon_area_idx].all():
+            messagebox.showinfo("Error", "Selected area is land or invalid data.", parent=self.master)
+            self.reset_annotation()
+            return
         
         # Check if this area is already annotated with the selected class.
         if (scene.predictions[scene.active_source][anno.selected_polygon_area_idx] == class_color).all():
@@ -1269,7 +1328,7 @@ class Visualizer(ctk.CTk):
         key = "Custom_Annotation"
 
         scene.predictions[key] = scene.predictions[scene.active_source].copy()
-        scene.landmasks[key] = scene.landmasks[scene.active_source].copy()
+        scene.land_nan_masks[key] = scene.land_nan_masks[scene.active_source].copy()
         scene.boundmasks[key] = scene.boundmasks[scene.active_source].copy()
         scene.active_source = key
 
@@ -1291,7 +1350,12 @@ class Visualizer(ctk.CTk):
 
         self.mode_var_lbl_source.set(key)   # set custom annotation as current label source
         scene.predictions[scene.active_source][anno.selected_polygon_area_idx] = class_color
-        scene.predictions[scene.active_source][scene.landmasks[scene.active_source]] = [255, 255, 255]
+        scene.predictions[scene.active_source][scene.land_nan_masks[scene.active_source]] = [255, 255, 255]
+
+        # Show annotated area on minimap (excluding land and invalid areas)
+        valid_polygon_idx = tuple(zip(*[(y, x) for y, x in zip(*anno.selected_polygon_area_idx) if not scene.land_nan_masks[scene.active_source][y, x]]))
+
+        self.minimap.show_annotated_area(valid_polygon_idx)
 
         img_y_min, img_y_max, img_x_min, img_x_max = anno.selected_polygon_window
         img_y_min = max(0, img_y_min-20)
@@ -1367,6 +1431,35 @@ class Visualizer(ctk.CTk):
 
 
     # Misc
+
+    def decimal_to_dms(self, decimal_degree, is_latitude=True):
+        """
+        Convert decimal degrees to degrees, minutes, seconds (DMS) format.
+        """
+        try:
+            if not isinstance(decimal_degree, (int, float)):
+                raise ValueError("Coordinate must be a number.")
+
+            # Determine hemisphere
+            if is_latitude:
+                hemisphere = 'N' if decimal_degree >= 0 else 'S'
+            else:
+                hemisphere = 'E' if decimal_degree >= 0 else 'W'
+
+            # Absolute value for calculation
+            abs_val = abs(decimal_degree)
+
+            # Degrees
+            degrees = int(abs_val)
+            # Minutes
+            minutes_full = (abs_val - degrees) * 60
+            minutes = int(minutes_full)
+            # Seconds
+            seconds = (minutes_full - minutes) * 60
+
+            return f"{degrees}°{minutes}'{seconds:.2f}\" {hemisphere}"
+        except Exception as e:
+            return f"Error: {e}"
 
     def _set_all_children_enabled(self, parent, enabled=True, exclude=[]):
         state = ctk.NORMAL if enabled else ctk.DISABLED

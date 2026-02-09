@@ -46,11 +46,19 @@ class SceneState:
     cum_hist: dict[str, list[np.ndarray]] = field(default_factory=dict)
     bin_list: dict[str, list[np.ndarray]] = field(default_factory=dict)
     bands: dict[str, int] = field(default_factory=dict)
-    sorted_data: dict[str, np.ndarray] = field(default_factory=dict)
+    hist: dict[str, np.ndarray] = field(default_factory=dict)
+    n_valid: dict[str, np.ndarray] = field(default_factory=dict)
+    rcm_200m_data: dict[str, np.ndarray] = None
 
     predictions: dict[str, np.ndarray] = field(default_factory=dict)
-    landmasks: dict[str, np.ndarray] = field(default_factory=dict)
+    land_nan_masks: dict[str, np.ndarray] = field(default_factory=dict)
     boundmasks: dict[str, np.ndarray] = field(default_factory=dict)
+
+    # Store base land mask for RCM scenes
+    base_land_mask: np.ndarray = None
+
+    # Store geocoded bounds
+    geo_coord_helpers: dict[str, float] = field(default_factory=dict)
 
     # Store currently selected prediction
     active_source: str = ""

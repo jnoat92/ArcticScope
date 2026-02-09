@@ -195,7 +195,7 @@ class AnnotationPanel(ctk.CTkFrame):
         pred_crop = scene.predictions[key][img_y_min:img_y_max, img_x_min:img_x_max].astype(np.float32)
         img_crop = scene.img[img_y_min:img_y_max, img_x_min:img_x_max].astype(np.float32)
         boundmask_crop = scene.boundmasks[key][img_y_min:img_y_max, img_x_min:img_x_max]
-        landmask_crop = scene.landmasks[key][img_y_min:img_y_max, img_x_min:img_x_max]
+        landmask_crop = scene.land_nan_masks[key][img_y_min:img_y_max, img_x_min:img_x_max]
 
         # Resize to fit canvas
         self.zoom_window.update_idletasks()  # Let Tk finish geometry calculation
@@ -273,7 +273,7 @@ class AnnotationPanel(ctk.CTkFrame):
 
             scene.predictions[scene.active_source][anno.selected_polygon_area_idx] = \
                 scene.predictions[key][anno.selected_polygon_area_idx]
-            scene.predictions[scene.active_source][scene.landmasks[scene.active_source]] = [255, 255, 255]
+            scene.predictions[scene.active_source][scene.land_nan_masks[scene.active_source]] = [255, 255, 255]
 
             # Update boundaries
             img_y_min, img_y_max, img_x_min, img_x_max = anno.selected_polygon_window
@@ -300,7 +300,7 @@ class AnnotationPanel(ctk.CTkFrame):
         else:
             # Whole area reset
             scene.predictions[scene.active_source] = scene.predictions[key].copy()
-            scene.landmasks[scene.active_source] = scene.landmasks[key].copy()
+            scene.land_nan_masks[scene.active_source] = scene.land_nan_masks[key].copy()
             scene.boundmasks[scene.active_source] = scene.boundmasks[key].copy()
             self.command_parent.refresh_view()
 
@@ -357,6 +357,10 @@ class AnnotationPanel(ctk.CTkFrame):
             json.dump(existing_notes, f, indent=4)
 
         anno.annotation_notes = notes
+
+        annotated_area_file_folder = os.path.split(file_path)[0]
+        annotated_area_file_path = os.path.join(annotated_area_file_folder, "annotated_area.npz")
+        self.command_parent.minimap.save_annotated_area(annotated_area_file_path)
 
         # mark as saved
         self.command_parent.lbl_source_btn[key].configure(text=key)
