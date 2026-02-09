@@ -3,7 +3,7 @@ Visualizer module for Remote Sensing Visualizer application
 
 Contains the Visualizer class which manages the GUI and image processing.
 
-Last modified: Jan 2026
+Last modified: Feb 2026
 '''
 import customtkinter as ctk
 import tkinter as tk
@@ -13,6 +13,7 @@ import numpy as np
 import cv2
 import os
 from rasterio.transform import xy
+from time import sleep
 
 from ui.evaluation import EvaluationPanel
 from ui.annotation import AnnotationPanel
@@ -310,10 +311,27 @@ class Visualizer(ctk.CTk):
             command=self.show_annotation_panel
         ).grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
+        # Loading bar at the bottom of the sidebar
+        self.loading_bar_frame = ctk.CTkFrame(self.sidebar)
+        self.loading_bar_frame.pack(fill="x", padx=5, pady=5, side="bottom")
+ 
+        # Loading bar label
+        self.loading_bar_label = ctk.CTkLabel(self.loading_bar_frame, text="", font=ctk.CTkFont(size=12))
+        self.loading_bar = ctk.CTkProgressBar(self.loading_bar_frame, orientation="horizontal", mode="determinate")
+        self.loading_bar.set(0)
+
+        # Set up in grid for hiding and showing
+        self.loading_bar_label.grid(row=0, column=0, padx=5, pady=5, sticky="we")
+        self.loading_bar.grid(row=1, column=0, padx=5, pady=5, sticky="we")
+
+        self.loading_bar_label.grid_remove() # Hide loading bar after short delay
+        self.loading_bar.grid_remove() # Hide loading bar after short delay
+ 
         # Layout behavior inside bottom_container
         self.sidebar.grid_rowconfigure(0, weight=0)
         self.sidebar.grid_rowconfigure(1, weight=0)
         self.sidebar.grid_rowconfigure(2, weight=1)
+        self.sidebar.grid_rowconfigure(3, weight=1)
         self.sidebar.grid_columnconfigure(0, weight=1)
 
         # Minimap frame housing minimap and status bar
@@ -489,8 +507,21 @@ class Visualizer(ctk.CTk):
 
             self.title(f"Scene {scene.scene_name}-{display.channel_mode}")
 
+            # Show loading bar
+            self.loading_bar_label.grid(row=0, column=0)
+            self.loading_bar.grid(row=1, column=0)
+            self.update_idletasks()
+
+            self.loading_bar.set(0) # Update loading bar after loading images
+            self.loading_bar_label.configure(text="Loading images...")
+            self.update_idletasks() # Force UI update to show loading bar progress
+
             # Load base images
             raw_img, orig_img, hist, n_valid, nan_mask, land_mask, rcm_200m_data, geo_coord_helpers = load_rcm_base_images(scene.folder_path)       
+
+            self.loading_bar.set(0.4) # Update loading bar after loading images
+            self.loading_bar_label.configure(text="Compiling loaded data...")
+            self.update_idletasks() # Force UI update to show loading bar progress
 
             if isinstance(raw_img, FileNotFoundError) or isinstance(raw_img, ValueError):
                 messagebox.showinfo("Error", f"The selected directory does not contain the required files. Please, select a valid directory.\n\n{raw_img}", parent=self.master)
@@ -519,6 +550,10 @@ class Visualizer(ctk.CTk):
                     orig_img["HV"],
                     stack="(HH, HV, HV)"
                 )
+
+            self.loading_bar.set(0.5)
+            self.loading_bar_label.configure(text="Cleaning up and preparing workspace...")
+            self.update_idletasks()
             
             # Handle switching scenes with existing custom annotation to one without
             if "Custom_Annotation" in scene.lbl_sources:
@@ -527,7 +562,17 @@ class Visualizer(ctk.CTk):
 
             self.minimap.delete_annotated_areas()
             self.choose_image()
+
+            self.loading_bar.set(0.6)
+            self.loading_bar_label.configure(text="Generating prediction...")
+            self.update_idletasks()
+
             self.load_pred()
+
+            self.loading_bar.set(0.85)
+            self.loading_bar_label.configure(text="Rendering view...")
+            self.update_idletasks()
+
             if not self.choose_lbl_source(plot=False):
                 scene.folder_path = ''
                 return
@@ -545,6 +590,16 @@ class Visualizer(ctk.CTk):
         self.app_state.display.contrast = 0.0
         self.brightness_slider.set(0) # reset to default
         self.app_state.display.brightness = 0.0
+
+        self.loading_bar.set(1)
+        self.loading_bar_label.configure(text="Image loaded")
+        self.update_idletasks()
+
+        sleep(1)
+
+        self.loading_bar_label.grid_remove() # Hide loading bar after short delay
+        self.loading_bar.grid_remove() # Hide loading bar after short delay
+
 
     def color_composite(self):
         display = self.app_state.display
@@ -774,8 +829,22 @@ class Visualizer(ctk.CTk):
         self.selection_start_coord = None
 
         if result:
+            # Show loading bar
+            self.loading_bar_label.grid(row=0, column=0)
+            self.loading_bar.grid(row=1, column=0)
+            self.update_idletasks()
+
+            self.loading_bar.set(0)
+            self.loading_bar_label.configure(text="Running local segmentation...")
+            self.update_idletasks()
+
             # Run IRGS on the selected area
             irgs_output, boundaries = IRGS(overlay.local_segmentation_area, n_classes=15, n_iter=120, mask=~land_nan_mask_crop)
+
+            self.loading_bar.set(0.5)
+            self.loading_bar_label.configure(text="Processing segmentation results...")
+            self.update_idletasks()
+
             overlay.local_segmentation_mask = np.zeros_like(scene.boundmasks[scene.active_source], dtype=np.uint8)
             overlay.local_segmentation_mask[y_min:y_max, x_min:x_max] = irgs_output
             overlay.local_segmentation_mask = np.tile(overlay.local_segmentation_mask[:, :, np.newaxis], (1, 1, 3))
@@ -784,7 +853,20 @@ class Visualizer(ctk.CTk):
             boundaries_bool = boundaries != 1
             overlay.local_segmentation_bounds[y_min:y_max, x_min:x_max] = boundaries_bool
             overlay.show_local_segmentation = True
+
+            self.loading_bar.set(0.8)
+            self.loading_bar_label.configure(text="Applying segmentation on overlay...")
+            self.update_idletasks()
+
             self.refresh_view()
+
+            self.loading_bar.set(1)
+            self.loading_bar_label.configure(text="Segmentation applied")
+            self.update_idletasks()
+            sleep(1)
+            self.loading_bar_label.grid_remove()
+            self.loading_bar.grid_remove()
+            self.update_idletasks()
 
 
 
