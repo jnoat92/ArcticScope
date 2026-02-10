@@ -19,7 +19,7 @@ from ui.evaluation import EvaluationPanel
 from ui.annotation import AnnotationPanel
 from ui.minimap import Minimap
 from core.utils import rgb2gray, generate_boundaries
-from core.io import load_existing_annotation, load_rcm_base_images, run_pred_model, resource_path
+from core.io import load_existing_annotation, load_rcm_product, load_rcm_base_images, run_pred_model, resource_path
 from core.segmentation import get_segment_contours, IRGS
 from core.overlay import compose_overlay
 from core.render import crop_resize, layer_imagery
@@ -516,44 +516,48 @@ class Visualizer(ctk.CTk):
             self.loading_bar_label.configure(text="Loading images...")
             self.update_idletasks() # Force UI update to show loading bar progress
 
-            # Load base images
-            raw_img, orig_img, hist, n_valid, nan_mask, land_mask, rcm_200m_data, geo_coord_helpers = load_rcm_base_images(scene.folder_path)       
+            try:
+                rcm_data = load_rcm_product(scene.folder_path)
+            except (FileNotFoundError, ValueError) as e:
+                messagebox.showinfo("Error", f"The selected directory does not contain the required files. Please, select a valid directory.\n\n{raw_img}", parent=self.master)
+                scene.folder_path = ''
+                self.loading_bar.set(0) # Update loading bar after loading images
+                self.loading_bar_label.configure(text="Error loading images")
+                self.update_idletasks()
+                return
 
-            self.loading_bar.set(0.4) # Update loading bar after loading images
+            self.loading_bar.set(0.2) # Update loading bar after loading images
+            self.loading_bar_label.configure(text="Pre-processing loaded data...")
+            self.update_idletasks()
+            # Load base images
+            raw_img, orig_img, hist, n_valid, nan_mask, land_mask, rcm_200m_data, geo_coord_helpers = load_rcm_base_images(rcm_data)       
+
+            self.loading_bar.set(0.45) # Update loading bar after loading images
             self.loading_bar_label.configure(text="Compiling loaded data...")
             self.update_idletasks() # Force UI update to show loading bar progress
 
-            if isinstance(raw_img, FileNotFoundError) or isinstance(raw_img, ValueError):
-                messagebox.showinfo("Error", f"The selected directory does not contain the required files. Please, select a valid directory.\n\n{raw_img}", parent=self.master)
-                scene.folder_path = ''
-                return
-            else:
-                # Save raw images to app state for later use (e.g., layering)
-                scene.raw_img = raw_img
-                scene.orig_img = orig_img
-                scene.hist = hist
-                scene.n_valid = n_valid
-                scene.nan_mask = nan_mask
-                scene.base_land_mask = land_mask
-                scene.rcm_200m_data = rcm_200m_data
-                scene.geo_coord_helpers = geo_coord_helpers
+            # Save raw images to app state for later use (e.g., layering)
+            scene.raw_img = raw_img
+            scene.orig_img = orig_img
+            scene.hist = hist
+            scene.n_valid = n_valid
+            scene.nan_mask = nan_mask
+            scene.base_land_mask = land_mask
+            scene.rcm_200m_data = rcm_200m_data
+            scene.geo_coord_helpers = geo_coord_helpers
 
-                self.img_ = orig_img
-                
-                self.img_["(HH, HH, HV)"] = layer_imagery(
-                    orig_img["HH"],
-                    orig_img["HV"],
-                    stack="(HH, HH, HV)"
-                )
-                self.img_["(HH, HV, HV)"] = layer_imagery(
-                    orig_img["HH"],
-                    orig_img["HV"],
-                    stack="(HH, HV, HV)"
-                )
-
-            self.loading_bar.set(0.5)
-            self.loading_bar_label.configure(text="Cleaning up and preparing workspace...")
-            self.update_idletasks()
+            self.img_ = orig_img
+            
+            self.img_["(HH, HH, HV)"] = layer_imagery(
+                orig_img["HH"],
+                orig_img["HV"],
+                stack="(HH, HH, HV)"
+            )
+            self.img_["(HH, HV, HV)"] = layer_imagery(
+                orig_img["HH"],
+                orig_img["HV"],
+                stack="(HH, HV, HV)"
+            )
             
             # Handle switching scenes with existing custom annotation to one without
             if "Custom_Annotation" in scene.lbl_sources:
@@ -568,10 +572,6 @@ class Visualizer(ctk.CTk):
             self.update_idletasks()
 
             self.load_pred()
-
-            self.loading_bar.set(0.85)
-            self.loading_bar_label.configure(text="Rendering view...")
-            self.update_idletasks()
 
             if not self.choose_lbl_source(plot=False):
                 scene.folder_path = ''
@@ -592,10 +592,10 @@ class Visualizer(ctk.CTk):
         self.app_state.display.brightness = 0.0
 
         self.loading_bar.set(1)
-        self.loading_bar_label.configure(text="Image loaded")
+        self.loading_bar_label.configure(text="Inference complete")
         self.update_idletasks()
 
-        sleep(1)
+        sleep(2)
 
         self.loading_bar_label.grid_remove() # Hide loading bar after short delay
         self.loading_bar.grid_remove() # Hide loading bar after short delay
@@ -841,8 +841,8 @@ class Visualizer(ctk.CTk):
             # Run IRGS on the selected area
             irgs_output, boundaries = IRGS(overlay.local_segmentation_area, n_classes=15, n_iter=120, mask=~land_nan_mask_crop)
 
-            self.loading_bar.set(0.5)
-            self.loading_bar_label.configure(text="Processing segmentation results...")
+            self.loading_bar.set(0.7)
+            self.loading_bar_label.configure(text="Applying segmentation on overlay...")
             self.update_idletasks()
 
             overlay.local_segmentation_mask = np.zeros_like(scene.boundmasks[scene.active_source], dtype=np.uint8)
@@ -854,16 +854,12 @@ class Visualizer(ctk.CTk):
             overlay.local_segmentation_bounds[y_min:y_max, x_min:x_max] = boundaries_bool
             overlay.show_local_segmentation = True
 
-            self.loading_bar.set(0.8)
-            self.loading_bar_label.configure(text="Applying segmentation on overlay...")
-            self.update_idletasks()
-
             self.refresh_view()
 
             self.loading_bar.set(1)
-            self.loading_bar_label.configure(text="Segmentation applied")
+            self.loading_bar_label.configure(text="Local segmentation applied")
             self.update_idletasks()
-            sleep(1)
+            sleep(2)
             self.loading_bar_label.grid_remove()
             self.loading_bar.grid_remove()
             self.update_idletasks()

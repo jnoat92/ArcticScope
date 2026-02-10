@@ -332,12 +332,7 @@ def scale_hh_hv_to_200m(rcm_data, target_spacing_m=200):
         "transformer": transformer
     }
 
-def load_rcm_base_images(data_dir):
-
-    try:
-        rcm_data = load_rcm_product(data_dir)
-    except ValueError as e:
-        return e, {}, {}, {}, {}, {}, {}, {}
+def load_rcm_base_images(rcm_data):
     
     rcm_200m_data = scale_hh_hv_to_200m(rcm_data, target_spacing_m=200)
     hh = rcm_200m_data["hh"]
