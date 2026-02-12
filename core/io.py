@@ -17,6 +17,7 @@ import cv2
 from rasterio.warp import reproject, Resampling, calculate_default_transform
 import geopandas as gpd
 from rasterio.features import rasterize
+from rasterio.crs import CRS
 from shapely.geometry import box, Polygon
 from shapely.ops import unary_union
 from rasterio.transform import xy, rowcol
@@ -185,11 +186,22 @@ def load_rcm_product(data_dir):
                 raise ValueError(f"expected 2 bands, found {src.count}")
             hh = src.read(1)
             hv = src.read(2)
+
+            gcps, gcp_crs = src.gcps
+            if src.crs is None:
+                src_crs = gcp_crs
+            else:
+                src_crs = src.crs
+
             src_transform = src.transform
-            src_crs = src.crs
             src_bounds = src.bounds
             nodata_hh = src.nodatavals[0]
             nodata_hv = src.nodatavals[1]
+
+            print(src.profile)
+            gcps, gcp_crs = src.gcps
+            print("Num GCPs:", len(gcps))
+            print("GCP CRS:", gcp_crs)
        
         # parse product.xml
         xml_root = etree.parse(str(xml_file)).getroot()
@@ -247,6 +259,8 @@ def load_rcm_product(data_dir):
             "src_bounds": src_bounds,
             "nodata_hh": nodata_hh,
             "nodata_hv": nodata_hv,
+            'gcps': gcps,
+            'img_type': img_path.suffix
         }
  
     except Exception as e:
@@ -258,45 +272,92 @@ def scale_hh_hv_to_200m(rcm_data, target_spacing_m=200):
     Loop over all RCM product folders in data_dir, rescale HH/HV to 200 m,
     and save the rescaled .img next to the original .img.
     """
-    # calculate target transform & shape
-    dst_transform, dst_width, dst_height = calculate_default_transform(
-        rcm_data["src_crs"],
-        rcm_data["src_crs"],
-        rcm_data["hh"].shape[1],    # cols,
-        rcm_data["hh"].shape[0],    # rows,
-        *rcm_data["src_bounds"],
-        resolution=target_spacing_m
-    )
+    dst_crs = CRS.from_epsg(3978)  # keep same CRS but ensure it's in EPSG format
 
-    # allocate outputs
-    hh_200m = np.empty((dst_height, dst_width), dtype=np.float32)
-    hv_200m = np.empty((dst_height, dst_width), dtype=np.float32)
+    if rcm_data['img_type'] == ".img":
+        # calculate target transform & shape
+        dst_transform, dst_width, dst_height = calculate_default_transform(
+            rcm_data["src_crs"],
+            rcm_data["src_crs"],
+            rcm_data["hh"].shape[1],    # cols,
+            rcm_data["hh"].shape[0],    # rows,
+            *rcm_data["src_bounds"],
+            resolution=target_spacing_m
+        )
 
-    # resample HH
-    reproject(
-        source=rcm_data["hh"],
-        destination=hh_200m,
-        src_transform=rcm_data["src_transform"],
-        src_crs=rcm_data["src_crs"],
-        dst_transform=dst_transform,
-        dst_crs=rcm_data["src_crs"],
-        resampling=Resampling.average,
-        src_nodata=rcm_data["nodata_hh"],
-        dst_nodata=np.nan
-    )
+        # allocate outputs
+        hh_200m = np.empty((dst_height, dst_width), dtype=np.float32)
+        hv_200m = np.empty((dst_height, dst_width), dtype=np.float32)
 
-    # resample HV
-    reproject(
-        source=rcm_data["hv"],
-        destination=hv_200m,
-        src_transform=rcm_data["src_transform"],
-        src_crs=rcm_data["src_crs"],
-        dst_transform=dst_transform,
-        dst_crs=rcm_data["src_crs"],
-        resampling=Resampling.average,
-        src_nodata=rcm_data["nodata_hv"],
-        dst_nodata=np.nan
-    )
+        # resample HH
+        reproject(
+            source=rcm_data["hh"],
+            destination=hh_200m,
+            src_transform=rcm_data["src_transform"],
+            src_crs=rcm_data["src_crs"],
+            dst_transform=dst_transform,
+            dst_crs=rcm_data["src_crs"],
+            resampling=Resampling.average,
+            src_nodata=rcm_data["nodata_hh"],
+            dst_nodata=np.nan
+        )
+
+        # resample HV
+        reproject(
+            source=rcm_data["hv"],
+            destination=hv_200m,
+            src_transform=rcm_data["src_transform"],
+            src_crs=rcm_data["src_crs"],
+            dst_transform=dst_transform,
+            dst_crs=rcm_data["src_crs"],
+            resampling=Resampling.average,
+            src_nodata=rcm_data["nodata_hv"],
+            dst_nodata=np.nan
+        )
+
+    elif rcm_data['img_type'] == ".tif":
+        # calculate target transform & shape
+        dst_transform, dst_width, dst_height = calculate_default_transform(
+            rcm_data["src_crs"],
+            dst_crs,
+            rcm_data["hh"].shape[1],    # cols,
+            rcm_data["hh"].shape[0],    # rows,
+            gcps=rcm_data["gcps"],
+            resolution=target_spacing_m
+        )
+
+        print(dst_transform)
+        print(dst_width, dst_height)
+
+        # allocate outputs
+        hh_200m = np.empty((dst_height, dst_width), dtype=np.float32)
+        hv_200m = np.empty((dst_height, dst_width), dtype=np.float32)
+
+        # resample HH
+        reproject(
+            source=rcm_data["hh"],
+            destination=hh_200m,
+            gcps=rcm_data["gcps"],
+            src_crs=rcm_data["src_crs"],
+            dst_transform=dst_transform,
+            dst_crs=dst_crs,
+            resampling=Resampling.average,
+            src_nodata=rcm_data["nodata_hh"],
+            dst_nodata=np.nan
+        )
+
+        # resample HV
+        reproject(
+            source=rcm_data["hv"],
+            destination=hv_200m,
+            gcps=rcm_data["gcps"],
+            src_crs=rcm_data["src_crs"],
+            dst_transform=dst_transform,
+            dst_crs=dst_crs,
+            resampling=Resampling.average,
+            src_nodata=rcm_data["nodata_hv"],
+            dst_nodata=np.nan
+        )
 
     # Create transformer for geocoding later
     transformer = Transformer.from_crs(rcm_data["src_crs"], "EPSG:4326", always_xy=True)
@@ -336,10 +397,14 @@ def scale_hh_hv_to_200m(rcm_data, target_spacing_m=200):
     }
 
 def load_rcm_base_images(rcm_data):
+
+    print(rcm_data["hh"].shape, rcm_data["hv"].shape)
     
     rcm_200m_data = scale_hh_hv_to_200m(rcm_data, target_spacing_m=200)
     hh = rcm_200m_data["hh"]
     hv = rcm_200m_data["hv"]
+
+    print(hh.shape, hv.shape)
 
     # Helpful geocoding info for transforming pixel->lat/lon
     geo_coord_helpers = {"dst_transform": rcm_200m_data["src_transform"],
@@ -428,6 +493,8 @@ def build_land_masks(shp_path: str, rcm_product: list[dict]) -> dict:
 
     # SAR bbox polygon
     sar_bbox = box(bounds.left, bounds.bottom, bounds.right, bounds.top)
+
+    print(sar_bbox)
 
     # Keep only shapefile features that intersect the SAR bbox + Clip the shapefile geometry to the SAR bbox 
     gdf = gdf[gdf.intersects(sar_bbox)].copy()
