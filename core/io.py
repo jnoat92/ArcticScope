@@ -183,14 +183,14 @@ def load_rcm_product(data_dir):
         """
         Returns: "earth" or "sensor"
         """
-        if src_crs is not None:
+        if gcps_count > 0:
             # Usually earth geometry (geocoded) if CRS exists.
             # Still allow identity transform edge case: keep it "earth" if CRS exists.
-            return "earth"
+            return "sensor"
 
         # No CRS: most likely sensor geometry. If also identity transform, definitely sensor.
         # Presence of GCPs strengthens sensor case.
-        return "sensor"
+        return "earth"
 
     def _parse_tie_points(xml_root, ns):
         """
@@ -355,6 +355,8 @@ def scale_hh_hv_to_200m(rcm_data, target_spacing_m=200):
     and save the rescaled .img next to the original .img.
     """
     dst_crs = CRS.from_epsg(3978)  # Canada Lambert Conformal Conic (meters) - good for preserving area and shape for Canada-wide data at this scale
+
+    rcm_data['img_type'] = ".img" # Placeholder for now
 
     if rcm_data['img_type'] == ".img":
         # calculate target transform & shape
@@ -561,6 +563,8 @@ def scale_hh_hv_sensor_to_target_spacing(
 
 def load_rcm_base_images(rcm_data):
 
+    print(rcm_data["geometry"])
+
     if rcm_data["geometry"] == "earth":
         rcm_200m_data = scale_hh_hv_to_200m(rcm_data, target_spacing_m=200)
     else:
@@ -575,10 +579,10 @@ def load_rcm_base_images(rcm_data):
                   "dst_crs": rcm_200m_data["src_crs"],
                   "transformer": rcm_200m_data["transformer"]}
 
-    land_mask = build_land_masks(
-        resource_path("landmask/StatCan_ocean.shp"),
-        rcm_200m_data
-    )["land_mask"]
+    # land_mask = build_land_masks(
+    #     resource_path("landmask/StatCan_ocean.shp"),
+    #     rcm_200m_data
+    # )["land_mask"]
 
     # Normalize HH band to uint8 for visualization
     nan_mask_hh = np.isnan(hh)
@@ -610,6 +614,8 @@ def load_rcm_base_images(rcm_data):
 
     raw_img, img_base, hist, n_valid, nan_mask = setup_base_images(hh, hv, nan_mask_hh, nan_mask_hv)
 
+    land_mask = nan_mask["HH"] | nan_mask["HV"]  # Placeholder landmask while fixing landmask
+    
     return raw_img, img_base, hist, n_valid, nan_mask, land_mask, rcm_200m_data, geo_coord_helpers
 
 def run_pred_model(lbl_source, img, land_mask, model_path, device='cpu'):
