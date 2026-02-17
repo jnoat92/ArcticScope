@@ -15,13 +15,15 @@ from lxml import etree
 from pathlib import Path
 import cv2
 from rasterio.warp import reproject, Resampling, calculate_default_transform
-import geopandas as gpd
+from rasterio.enums import Resampling
 from rasterio.features import rasterize
 from rasterio.crs import CRS
+from rasterio.transform import array_bounds, Affine
+from rasterio.coords import BoundingBox
+import geopandas as gpd
 from shapely.geometry import box, Polygon
 from shapely.ops import unary_union
-from rasterio.transform import array_bounds
-from rasterio.coords import BoundingBox
+
 from pyproj import Transformer
 import matplotlib.pyplot as plt
 import torch
@@ -165,6 +167,77 @@ def load_rcm_product(data_dir):
         If directory doesn't contain exactly one .img file or one product.xml file,
         or if .img file doesn't have exactly 2 bands.
     """
+
+    def _is_identity_transform(t, tol=1e-9) -> bool:
+            # rasterio Affine: (a,b,c,d,e,f)
+            return (
+                abs(t.a - 1.0) < tol and abs(t.b) < tol and abs(t.c) < tol and
+                abs(t.d) < tol and abs(t.e + 1.0) < tol and abs(t.f) < tol
+            ) or (
+                # some files may use +1 for y as well
+                abs(t.a - 1.0) < tol and abs(t.b) < tol and abs(t.c) < tol and
+                abs(t.d) < tol and abs(t.e - 1.0) < tol and abs(t.f) < tol
+            )
+
+    def _detect_geometry(src_crs, src_transform, gcps_count: int) -> str:
+        """
+        Returns: "earth" or "sensor"
+        """
+        if src_crs is not None:
+            # Usually earth geometry (geocoded) if CRS exists.
+            # Still allow identity transform edge case: keep it "earth" if CRS exists.
+            return "earth"
+
+        # No CRS: most likely sensor geometry. If also identity transform, definitely sensor.
+        # Presence of GCPs strengthens sensor case.
+        return "sensor"
+
+    def _parse_tie_points(xml_root, ns):
+        """
+        Try to parse image tie points: imageCoordinate (line/pixel) + geodeticCoordinate (lat/lon)
+        Returns list of dicts: {row, col, lat, lon}
+        """
+        tie_points = []
+        # You previously used this path in another snippet:
+        # .//geolocationGrid/imageTiePoint
+        tps = xml_root.findall(".//rcm:geolocationGrid//rcm:imageTiePoint", ns)
+        for tp in tps:
+            img = tp.find(".//rcm:imageCoordinate", ns)
+            geo = tp.find(".//rcm:geodeticCoordinate", ns)
+            if img is None or geo is None:
+                continue
+
+            line = img.find("rcm:line", ns)
+            pixel = img.find("rcm:pixel", ns)
+            lat = geo.find("rcm:latitude", ns)
+            lon = geo.find("rcm:longitude", ns)
+
+            if None in (line, pixel, lat, lon):
+                continue
+
+            tie_points.append({
+                "row": float(line.text),
+                "col": float(pixel.text),
+                "latitude": float(lat.text),
+                "longitude": float(lon.text),
+            })
+        return tie_points
+
+    def _infer_axis_mapping_from_xml(pixel_spacing):
+        """
+        For SAR products:
+        sampledPixelSpacing -> sample/pixel spacing along x-axis (cols), typically range
+        sampledLineSpacing  -> line spacing along y-axis (rows), typically azimuth
+        """
+        # Return a standard mapping dict you can use later.
+        return {
+            "cols_are": "range",   # sample direction
+            "rows_are": "azimuth", # line direction
+            "range_spacing_m": pixel_spacing.get("range_m"),
+            "azimuth_spacing_m": pixel_spacing.get("azimuth_m"),
+            "confidence": "high (SAR convention: samples=pixels=cols, lines=rows)"
+        }
+
     img_file = list(Path(data_dir).glob("*.img"))
     if len(img_file) != 1:
         img_file = list(Path(data_dir).glob("*.tif"))
@@ -199,10 +272,8 @@ def load_rcm_product(data_dir):
             nodata_hh = src.nodatavals[0]
             nodata_hv = src.nodatavals[1]
 
-            print(src.profile)
             gcps, gcp_crs = src.gcps
-            print("Num GCPs:", len(gcps))
-            print("GCP CRS:", gcp_crs)
+            gcps_count = len(gcps) if gcps is not None else 0
        
         # parse product.xml
         xml_root = etree.parse(str(xml_file)).getroot()
@@ -227,32 +298,31 @@ def load_rcm_product(data_dir):
             if azimuth_spacing_elem is not None else None,
         }
 
-        # find tie-points
-        tie_pts = xml_root.findall(".//rcm:geolocationGrid/rcm:imageTiePoint", ns)
-
-        if len(tie_pts) == 0:
-            print(f"Skipping {img_path}: no tie-points found")
-            # continue
-
+        # geocoded points (lat/lon only) - keep your original behavior
         geocoded_points = []
+        geodetic_coords = xml_root.findall(".//rcm:geodeticCoordinate", ns)
+        for coord in geodetic_coords:
+            lat = coord.find("rcm:latitude", ns)
+            lon = coord.find("rcm:longitude", ns)
+            if lat is not None and lon is not None:
+                geocoded_points.append({"latitude": float(lat.text), "longitude": float(lon.text)})
 
-        for tp in tie_pts:
-            img = tp.find("rcm:imageCoordinate", ns)
-            geo = tp.find("rcm:geodeticCoordinate", ns)
+        # find tie-points
+        tie_pts = _parse_tie_points(xml_root, ns)
 
-            geocoded_points.append({
-                "line": float(img.find("rcm:line", ns).text),
-                "pixel": float(img.find("rcm:pixel", ns).text),
-                "latitude": float(geo.find("rcm:latitude", ns).text),
-                "longitude": float(geo.find("rcm:longitude", ns).text)
-            })
+        # Detect geometry type (earth vs sensor) based on CRS
+        geometry = _detect_geometry(src_crs, src_transform, gcps_count)
  
-        return {
-            "folder_name": data_dir,
+        # Axis mapping assumption
+        axis_mapping = _infer_axis_mapping_from_xml(pixel_spacing)
+
+        out = {
+            "folder_name": str(data_dir),
             "product_id": product_id,
             "hh": hh,
             "hv": hv,
-            "pixel_spacing": pixel_spacing,
+            # original fields
+            # "pixel_spacing": pixel_spacing,
             "geocoded_points": geocoded_points,
             "xml": xml_root,
             "src_transform": src_transform,
@@ -260,9 +330,20 @@ def load_rcm_product(data_dir):
             "src_bounds": src_bounds,
             "nodata_hh": nodata_hh,
             "nodata_hv": nodata_hv,
-            'gcps': gcps,
-            'img_type': img_path.suffix
+            # new fields for routing + verification
+            "geometry": geometry,                 # "earth" or "sensor"
+            "transform_is_identity": _is_identity_transform(src_transform),
+            "gcps_count": gcps_count,
+            "gcp_crs": gcp_crs.to_string() if gcp_crs is not None else None,
+            "axis_mapping": axis_mapping,
+            "tie_points": tie_pts,             # row/col + lat/lon (if present)
         }
+
+        # Convenience: keys expected by your sensor downsampler (if you keep that API)
+        out["range_pixel_spacing_m"] = pixel_spacing["range_m"]
+        out["azimuth_pixel_spacing_m"] = pixel_spacing["azimuth_m"]
+
+        return out
  
     except Exception as e:
         print(f"Skipping {data_dir}: {e}")
@@ -326,9 +407,6 @@ def scale_hh_hv_to_200m(rcm_data, target_spacing_m=200):
             gcps=rcm_data["gcps"],
             resolution=target_spacing_m
         )
-
-        print(dst_transform)
-        print(dst_width, dst_height)
 
         rcm_data["src_bounds"] = BoundingBox(*array_bounds(dst_height, dst_width, dst_transform))
 
@@ -401,9 +479,94 @@ def scale_hh_hv_to_200m(rcm_data, target_spacing_m=200):
         "transformer": transformer
     }
 
+def scale_hh_hv_sensor_to_target_spacing(
+    rcm_data,
+    target_spacing_m=200.0,
+    range_spacing_m_key="range_pixel_spacing_m",
+    azimuth_spacing_m_key="azimuth_pixel_spacing_m",
+):
+    hh = rcm_data["hh"]
+    hv = rcm_data["hv"]
+
+    range_spacing = float(rcm_data[range_spacing_m_key])   # meters/pixel in cols (usually range)
+    az_spacing    = float(rcm_data[azimuth_spacing_m_key]) # meters/pixel in rows (usually azimuth)
+
+    if range_spacing <= 0 or az_spacing <= 0:
+        raise ValueError(f"Invalid spacings: range={range_spacing}, azimuth={az_spacing}")
+
+    src_h, src_w = hh.shape
+
+    sx = target_spacing_m / range_spacing
+    sy = target_spacing_m / az_spacing
+
+    dst_w = max(1, int(np.round(src_w / sx)))
+    dst_h = max(1, int(np.round(src_h / sy)))
+
+    # Treat sensor grid as a planar metric grid (not Earth), but still define transforms in meters
+    src_transform = Affine(range_spacing, 0, 0,
+                           0, -az_spacing, 0)
+    dst_transform = Affine(target_spacing_m, 0, 0,
+                           0, -target_spacing_m, 0)
+
+    # Dummy CRS to satisfy rasterio/gdal; since src_crs == dst_crs there is no real reprojection.
+    dummy_crs = CRS.from_epsg(3857)
+
+    hh_out = np.empty((dst_h, dst_w), dtype=np.float32)
+    hv_out = np.empty((dst_h, dst_w), dtype=np.float32)
+
+    reproject(
+        source=hh,
+        destination=hh_out,
+        src_transform=src_transform,
+        src_crs=dummy_crs,
+        dst_transform=dst_transform,
+        dst_crs=dummy_crs,
+        resampling=Resampling.average,
+        src_nodata=rcm_data.get("nodata_hh", 0.0),
+        dst_nodata=np.nan,
+    )
+
+    reproject(
+        source=hv,
+        destination=hv_out,
+        src_transform=src_transform,
+        src_crs=dummy_crs,
+        dst_transform=dst_transform,
+        dst_crs=dummy_crs,
+        resampling=Resampling.average,
+        src_nodata=rcm_data.get("nodata_hv", 0.0),
+        dst_nodata=np.nan,
+    )
+
+    return {
+        "hh": hh_out,
+        "hv": hv_out,
+
+        # Keep compatibility with your other function’s output keys:
+        "src_transform": dst_transform,
+        "src_crs": None,                 # still sensor-geometry (no real CRS)
+        "src_bounds": None,              # not meaningful in Earth coords
+
+        "dst_height": dst_h,
+        "dst_width": dst_w,
+        "transformer": None,
+
+        "sensor_transform": dst_transform,
+        "target_spacing_m": target_spacing_m,
+        "range_spacing_m": range_spacing,
+        "azimuth_spacing_m": az_spacing,
+        "folder_name": rcm_data.get("folder_name", None),
+
+    }
+
 def load_rcm_base_images(rcm_data):
-    
-    rcm_200m_data = scale_hh_hv_to_200m(rcm_data, target_spacing_m=200)
+
+    if rcm_data["geometry"] == "earth":
+        rcm_200m_data = scale_hh_hv_to_200m(rcm_data, target_spacing_m=200)
+    else:
+        rcm_200m_data = scale_hh_hv_sensor_to_target_spacing(rcm_data, target_spacing_m=200, 
+                                                             range_spacing_m_key="range_pixel_spacing_m", 
+                                                             azimuth_spacing_m_key="azimuth_pixel_spacing_m")
     hh = rcm_200m_data["hh"]
     hv = rcm_200m_data["hv"]
 
@@ -495,7 +658,6 @@ def build_land_masks(shp_path: str, rcm_product: list[dict]) -> dict:
     # SAR bbox polygon
     sar_bbox = box(bounds.left, bounds.bottom, bounds.right, bounds.top)
 
-    print(sar_bbox)
 
     # Keep only shapefile features that intersect the SAR bbox + Clip the shapefile geometry to the SAR bbox 
     gdf = gdf[gdf.intersects(sar_bbox)].copy()
