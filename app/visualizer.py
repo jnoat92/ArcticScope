@@ -17,7 +17,7 @@ from rasterio.transform import xy
 from ui.evaluation import EvaluationPanel
 from ui.annotation import AnnotationPanel
 from ui.minimap import Minimap
-from core.utils import rgb2gray, generate_boundaries, ds_to_src_pixel, build_tiepoint_grid_interpolator
+from core.utils import rgb2gray, generate_boundaries, ds_to_src_pixel, tiepoints_1d_to_grid, make_pix2ll
 from core.io import load_existing_annotation, load_rcm_product, load_rcm_base_images, run_pred_model, resource_path
 from core.segmentation import get_segment_contours, IRGS
 from core.overlay import compose_overlay
@@ -543,12 +543,18 @@ class Visualizer(ctk.CTk):
             scene.nan_mask = nan_mask
             scene.base_land_mask = land_mask
             scene.rcm_200m_data = rcm_200m_data
+
+            # Save geo coord helpers to app state for later use
             scene.geo_coord_helpers = geo_coord_helpers
-            scene.tie_points = rcm_data.get("tie_points", None)
+            scene.tie_lines = rcm_data.get("tie_lines", None)
+            scene.tie_pixels = rcm_data.get("tie_pixels", None)
+            scene.tie_lats = rcm_data.get("tie_lats", None)
+            scene.tie_lons = rcm_data.get("tie_lons", None)
 
             # Build tiepoint grid interpolator if available
-            if scene.tie_points is not None:
-                self.pix2ll, _ = build_tiepoint_grid_interpolator(scene.tie_points)
+            if scene.tie_lines is not None:
+                rows, cols, lat_grid, lon_grid = tiepoints_1d_to_grid(scene.tie_lines, scene.tie_pixels, scene.tie_lats, scene.tie_lons)
+                self.pix2ll = make_pix2ll(rows, cols, lat_grid, lon_grid)
 
             self.img_ = orig_img
             
