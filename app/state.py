@@ -57,6 +57,8 @@ class SceneState:
     # Store base land mask for RCM scenes
     base_land_mask: np.ndarray = None
 
+    tie_points: list[dict] = None
+
     # Store geocoded bounds
     geo_coord_helpers: dict[str, float] = field(default_factory=dict)
 

@@ -17,7 +17,7 @@ from rasterio.transform import xy
 from ui.evaluation import EvaluationPanel
 from ui.annotation import AnnotationPanel
 from ui.minimap import Minimap
-from core.utils import rgb2gray, generate_boundaries
+from core.utils import rgb2gray, generate_boundaries, ds_to_src_pixel, build_tiepoint_grid_interpolator
 from core.io import load_existing_annotation, load_rcm_product, load_rcm_base_images, run_pred_model, resource_path
 from core.segmentation import get_segment_contours, IRGS
 from core.overlay import compose_overlay
@@ -544,6 +544,11 @@ class Visualizer(ctk.CTk):
             scene.base_land_mask = land_mask
             scene.rcm_200m_data = rcm_200m_data
             scene.geo_coord_helpers = geo_coord_helpers
+            scene.tie_points = rcm_data.get("tie_points", None)
+
+            # Build tiepoint grid interpolator if available
+            if scene.tie_points is not None:
+                self.pix2ll, _ = build_tiepoint_grid_interpolator(scene.tie_points)
 
             self.img_ = orig_img
             
@@ -1177,11 +1182,18 @@ class Visualizer(ctk.CTk):
             elif scene.nan_mask["HH"][y, x]:
                 self.status_bar.configure(text=f"Lat: N/A, Lon: N/A")
             else:
-                # Convert downscaled image coordinates to original image coordinates
-                # x and y (row and col) are flipped so flip back before geocoding
-                x, y = xy(scene.geo_coord_helpers["dst_transform"], y, x, offset="center")
-                # Convert image coordinates to geographic coordinates (lat/lon)
-                lon, lat = scene.geo_coord_helpers["transformer"].transform(x, y)
+                # To handle cases where transformer is not available, use tie points to interpolate lat/lon
+                if scene.geo_coord_helpers["transformer"] is None:
+                    row_src, col_src = ds_to_src_pixel(y, x, scene.rcm_200m_data["src_height"], scene.rcm_200m_data["src_width"],
+                                                    scene.rcm_200m_data["dst_height"], scene.rcm_200m_data["dst_width"])
+                    lat, lon = self.pix2ll(row_src, col_src)
+                else:
+                    # Convert downscaled image coordinates to original image coordinates
+                    # x and y (row and col) are flipped so flip back before geocoding
+                    x, y = xy(scene.geo_coord_helpers["dst_transform"], y, x, offset="center")
+                    # Convert image coordinates to geographic coordinates (lat/lon)
+                    lon, lat = scene.geo_coord_helpers["transformer"].transform(x, y)
+                
                 # Convert lat and lon to DMS format
                 lat_dms = self.decimal_to_dms(lat, is_latitude=True)
                 lon_dms = self.decimal_to_dms(lon, is_latitude=False)

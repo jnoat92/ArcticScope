@@ -198,8 +198,6 @@ def load_rcm_product(data_dir):
         Returns list of dicts: {row, col, lat, lon}
         """
         tie_points = []
-        # You previously used this path in another snippet:
-        # .//geolocationGrid/imageTiePoint
         tps = xml_root.findall(".//rcm:geolocationGrid//rcm:imageTiePoint", ns)
         for tp in tps:
             img = tp.find(".//rcm:imageCoordinate", ns)
@@ -549,6 +547,8 @@ def scale_hh_hv_sensor_to_target_spacing(
         "src_crs": None,                 # still sensor-geometry (no real CRS)
         "src_bounds": None,              # not meaningful in Earth coords
 
+        "src_height": src_h,
+        "src_width": src_w,
         "dst_height": dst_h,
         "dst_width": dst_w,
         "transformer": None,
