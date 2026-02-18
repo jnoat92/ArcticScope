@@ -7,6 +7,7 @@ The application allows you to:
 - Adjust image brightness, contrast, and prediction overlay opacity
 - Run a prediction model on the image
 - Draw polygon annotations to highlight and label regions where the model prediction is incorrect
+- Handles both Earth and sensor geometry
 
 
 > **Key idea:** quickly review model predictions and generate high-quality correction labels for retraining and evaluation.
@@ -77,7 +78,7 @@ python -m main
 
 ### Basic App Startup
 1. Launch the app
-2. Select a SAR scene (folder with .img and .xml files)
+2. Select a SAR scene (folder with .img (or .tif) and .xml files)
 3. The app displays image and model prediction overlay
 
 ### Functionalities
@@ -99,7 +100,7 @@ python -m main
 ### Data Formats
 #### Supported Inputs
 
-SAR image formats: .img
+SAR image formats: .img or .tif
 
 Supporting files: .xml, .txt
 
@@ -211,4 +212,4 @@ Application Feels Slow
 - Zoom in on a smaller area
 - Close other applications if system memory is limited.
 
-Last modified: Feb 12, 2026
+Last modified: Feb 18, 2026
