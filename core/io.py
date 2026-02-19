@@ -30,7 +30,7 @@ from pyproj import Transformer
 import matplotlib.pyplot as plt
 import torch
 from scipy.interpolate import griddata
-from model.model_helper import Normalize_min_max, load_model, forward_model
+from model.model_helper import Normalize_min_max, load_model, forward_model_committee
 
 from core.utils import rgb2gray, generate_boundaries
 from core.parallel_handler import Parallel
@@ -619,9 +619,7 @@ def run_pred_model(lbl_source, img, land_mask, model_path, device='cpu'):
     device= 'cpu'   #state variable
     img_norm = torch.permute(torch.Tensor(img_norm[None, ...]).to(device), (0, 3, 1, 2)).float()
 
-    model = load_model(model_path, device='cpu')
-
-    colored_pred_map = forward_model(model, img_norm, nan_mask=valid_mask) # make sure nan_mask is passed
+    colored_pred_map = forward_model_committee(model_path, img_norm, valid_mask=valid_mask) # make sure nan_mask is passed
 
     colored_pred_map[land_mask == True] = [255, 255, 255]  # Set land areas to white
     colored_pred_map[valid_mask == False] = [255, 255, 255]  # Set NaN areas to white
