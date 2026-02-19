@@ -134,5 +134,6 @@ class AppState:
     display: DisplaySettings = field(default_factory=DisplaySettings)
     overlay: OverlaySettings = field(default_factory=OverlaySettings)
     anno: AnnotationState = field(default_factory=AnnotationState)
+    session_models: dict[str, object] = field(default_factory=dict) # Cache for loaded models to avoid reloading during session
 
 

@@ -396,7 +396,8 @@ class Visualizer(ctk.CTk):
         scene.boundmasks = {}
 
         model_path = resource_path("model/Unet_model_12_.pt")
-        variables = run_pred_model(scene.lbl_sources[0], scene.rcm_200m_data, scene.base_land_mask, model_path=model_path, device='cpu')
+        variables, self.app_state.session_models = run_pred_model(scene.lbl_sources[0], scene.rcm_200m_data, scene.base_land_mask, 
+                                                                  model_path=model_path, existing_session_models=self.app_state.session_models, device='cpu')
         existing_anno, anno.annotation_notes, self.stored_area_idx = load_existing_annotation(scene.scene_name)
 
         if existing_anno is not None:

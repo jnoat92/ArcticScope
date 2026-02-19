@@ -551,7 +551,7 @@ def scale_hh_hv_sensor_geometry(
 
 def load_rcm_base_images(rcm_data):
 
-    shp_path = "landmask/StatCan_ocean.shp"
+    shp_path = resource_path("landmask/StatCan_ocean.shp")
 
     if rcm_data["geometry"] == "earth":
         rcm_200m_data = scale_hh_hv_earth_geometry(rcm_data, target_spacing_m=200)
@@ -612,26 +612,32 @@ def load_rcm_base_images(rcm_data):
     
     return raw_img, img_base, hist, n_valid, nan_mask, land_mask, rcm_200m_data, geo_coord_helpers
 
-def run_pred_model(lbl_source, img, land_mask, model_path, device='cpu'):
-    valid_mask = ~np.isnan(img["hh"])
-    img_norm = Normalize_min_max(np.stack([img["hh"], img["hv"]], axis=-1),
-                             valid_mask=valid_mask)
-    device= 'cpu'   #state variable
-    img_norm = torch.permute(torch.Tensor(img_norm[None, ...]).to(device), (0, 3, 1, 2)).float()
+def run_pred_model(lbl_source, img, land_mask, model_path, existing_session_models, device="cpu"):
+    hh = img["hh"]
+    hv = img["hv"]
+    valid_mask = np.isfinite(hh) & np.isfinite(hv)
 
-    colored_pred_map = forward_model_committee(model_path, img_norm, valid_mask=valid_mask) # make sure nan_mask is passed
+    img_norm = Normalize_min_max(np.stack([hh, hv], axis=-1), valid_mask=valid_mask)
 
-    colored_pred_map[land_mask == True] = [255, 255, 255]  # Set land areas to white
-    colored_pred_map[valid_mask == False] = [255, 255, 255]  # Set NaN areas to white
+    img_norm_t = torch.from_numpy(img_norm[None]).permute(0, 3, 1, 2).to(device).float()
 
-    land_nan_mask = ~valid_mask | land_mask
+    colored_pred_map, session_models = forward_model_committee(
+        model_path,
+        existing_session_models,
+        img_norm_t,
+        valid_mask=valid_mask,
+        device=device,
+        calibrate_once_per_session=True,
+    )
 
+    colored_pred_map[land_mask] = [255, 255, 255]
+    colored_pred_map[~valid_mask] = [255, 255, 255]
+
+    land_nan_mask = (~valid_mask) | land_mask
     boundmask = generate_boundaries(rgb2gray(colored_pred_map))
 
-    # Save colored_pred_map
-    #Image.fromarray(colored_pred_map).save("model_prediction.png")
+    return [(lbl_source, colored_pred_map, land_nan_mask, boundmask)], session_models
 
-    return [(lbl_source, colored_pred_map, land_nan_mask, boundmask)]
 
 def build_land_masks_earth_geometry(shp_path: str, rcm_product: list[dict]) -> dict:
     """
