@@ -549,23 +549,17 @@ def scale_hh_hv_sensor_geometry(
         "tie_lons": rcm_data["tie_lons"],
     }
 
-def load_rcm_base_images(rcm_data):
-
-    shp_path = resource_path("landmask/StatCan_ocean.shp")
-
+def scale_hh_hv(rcm_data):
     if rcm_data["geometry"] == "earth":
         rcm_200m_data = scale_hh_hv_earth_geometry(rcm_data, target_spacing_m=200)
     else:
         rcm_200m_data = scale_hh_hv_sensor_geometry(rcm_data, target_spacing_m=200, 
                                                              range_spacing_m_key="range_pixel_spacing_m", 
                                                              azimuth_spacing_m_key="azimuth_pixel_spacing_m")
-    hh = rcm_200m_data["hh"]
-    hv = rcm_200m_data["hv"]
+    return rcm_200m_data
 
-    # Helpful geocoding info for transforming pixel->lat/lon
-    geo_coord_helpers = {"dst_transform": rcm_200m_data["src_transform"],
-                  "dst_crs": rcm_200m_data["src_crs"],
-                  "transformer": rcm_200m_data["transformer"]}
+def build_land_masks(rcm_200m_data):
+    shp_path = resource_path("landmask/StatCan_ocean.shp")
 
     rcm_product = rcm_200m_data.copy()
     if rcm_product["geometry"] == "earth":
@@ -579,6 +573,17 @@ def load_rcm_base_images(rcm_data):
             threshold=0.5,
             chunk_rows=512
         )
+
+    return land_mask
+
+def normalize_and_prepare_images(rcm_200m_data):
+    hh = rcm_200m_data["hh"]
+    hv = rcm_200m_data["hv"]
+
+    # Helpful geocoding info for transforming pixel->lat/lon
+    geo_coord_helpers = {"dst_transform": rcm_200m_data["src_transform"],
+                  "dst_crs": rcm_200m_data["src_crs"],
+                  "transformer": rcm_200m_data["transformer"]}
 
     # Normalize HH band to uint8 for visualization
     nan_mask_hh = np.isnan(hh)
@@ -610,7 +615,8 @@ def load_rcm_base_images(rcm_data):
 
     raw_img, img_base, hist, n_valid, nan_mask = setup_base_images(hh, hv, nan_mask_hh, nan_mask_hv)
     
-    return raw_img, img_base, hist, n_valid, nan_mask, land_mask, rcm_200m_data, geo_coord_helpers
+    return raw_img, img_base, hist, n_valid, nan_mask, geo_coord_helpers
+
 
 def run_pred_model(lbl_source, img, land_mask, model_path, device="cpu"):
     hh = img["hh"]
