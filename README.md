@@ -145,7 +145,7 @@ pip install -r requirements.txt
 Run the build script:
 
 ```bash
-RS-visualizer\create_executable.bat
+ArcticScope\create_executable.bat
 ```
 
 #### Build Output
