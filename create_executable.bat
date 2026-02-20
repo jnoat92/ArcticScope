@@ -25,6 +25,7 @@ echo Starting PyInstaller build...
 
 pyinstaller main.py ^
   --onedir ^
+  --windowed ^
   --name ArcticScope ^
   --distpath %ROOT% ^
   --add-data "icons;icons" ^
