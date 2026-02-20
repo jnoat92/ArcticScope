@@ -612,7 +612,7 @@ def load_rcm_base_images(rcm_data):
     
     return raw_img, img_base, hist, n_valid, nan_mask, land_mask, rcm_200m_data, geo_coord_helpers
 
-def run_pred_model(lbl_source, img, land_mask, model_path, existing_session_models, device="cpu"):
+def run_pred_model(lbl_source, img, land_mask, model_path, device="cpu"):
     hh = img["hh"]
     hv = img["hv"]
     valid_mask = np.isfinite(hh) & np.isfinite(hv)
@@ -621,13 +621,11 @@ def run_pred_model(lbl_source, img, land_mask, model_path, existing_session_mode
 
     img_norm_t = torch.from_numpy(img_norm[None]).permute(0, 3, 1, 2).to(device).float()
 
-    colored_pred_map, session_models = forward_model_committee(
+    colored_pred_map = forward_model_committee(
         model_path,
-        existing_session_models,
         img_norm_t,
         valid_mask=valid_mask,
         device=device,
-        calibrate_once_per_session=False,
     )
 
     colored_pred_map[land_mask] = [255, 255, 255]
@@ -636,7 +634,7 @@ def run_pred_model(lbl_source, img, land_mask, model_path, existing_session_mode
     land_nan_mask = (~valid_mask) | land_mask
     boundmask = generate_boundaries(rgb2gray(colored_pred_map))
 
-    return [(lbl_source, colored_pred_map, land_nan_mask, boundmask)], session_models
+    return [(lbl_source, colored_pred_map, land_nan_mask, boundmask)]
 
 
 def build_land_masks_earth_geometry(shp_path: str, rcm_product: list[dict]) -> dict:

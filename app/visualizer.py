@@ -395,9 +395,17 @@ class Visualizer(ctk.CTk):
         scene.land_nan_masks = {}
         scene.boundmasks = {}
 
-        model_path = resource_path("model/Unet_model_12_.pt")
-        variables, self.app_state.session_models = run_pred_model(scene.lbl_sources[0], scene.rcm_200m_data, scene.base_land_mask, 
-                                                                  model_path=model_path, existing_session_models=self.app_state.session_models, device='cpu')
+        model_paths = []
+        model_folder = resource_path("model")
+
+        for file in os.listdir(model_folder):
+            if file.endswith(".pt"):
+                 model_paths.append(file)
+
+        model_path = model_paths[0] if model_paths else None
+        model_path = os.path.join(model_folder, model_path) if model_path else None
+        variables = run_pred_model(scene.lbl_sources[0], scene.rcm_200m_data, scene.base_land_mask, 
+                                                                  model_path=model_path, device='cpu')
         existing_anno, anno.annotation_notes, self.stored_area_idx = load_existing_annotation(scene.scene_name)
 
         if existing_anno is not None:

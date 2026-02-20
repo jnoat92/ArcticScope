@@ -180,24 +180,19 @@ def bn_calibrate_from_image(
 
     return model
 
-def load_model(model_path, img_norm, valid_mask, device="cpu", do_bn_calib=True):
+def load_model(model_path, img_norm, valid_mask, device='cpu'):
     """
     Load a pretrained UNet model from a checkpoint.
-    
     Parameters
     ----------
     model_path : str
         Path to the model checkpoint file.
     device : str, optional
         Device to load the model on ('cpu' or 'cuda'). Default is 'cpu'.
-    do_bn_calib : bool, optional
-        Whether to perform batch normalization calibration. Default is True.
-    
     Returns
     -------
     model : UNet
         Loaded UNet model with weights from checkpoint.
-    
     Raises
     ------
     AssertionError
@@ -205,28 +200,24 @@ def load_model(model_path, img_norm, valid_mask, device="cpu", do_bn_calib=True)
     """
     model = UNet(2, 2)
 
-    if not os.path.exists(model_path):
-        raise AssertionError(f"There is not checkpoint for {model_path}")
-
-    checkpoint = torch.load(model_path, map_location=torch.device(device), weights_only=False)
-    state_dict = checkpoint["model"] if isinstance(checkpoint, dict) and "model" in checkpoint else checkpoint
+    if os.path.exists(model_path):
+        checkpoint = torch.load(model_path, map_location=torch.device(device), weights_only=False)
+    else:
+        raise AssertionError("There is not checkpoint for {}".format(model_path))
+   
+    state_dict = checkpoint['model'] if isinstance(checkpoint, dict) and 'model' in checkpoint else checkpoint
     model.load_state_dict(state_dict)
-
-    if do_bn_calib:
-        model = bn_calibrate_from_image(
-            model,
-            img_norm,
-            valid_mask,
-            device=device,
-            steps=100,
-            batch_size=8,
-            patch_size=384,
-            bn_momentum=0.3
-        )
-
-    return model
-
-
+    
+    # model = bn_calibrate_from_image(
+    #     model,
+    #     img_norm,
+    #     valid_mask,
+    #     device=device,     # calibration on GPU
+    #     steps=100,
+    #     batch_size=8,      # with 8GB + U-Net, start conservative
+    #     patch_size=384,    # if OOM, try 256
+    #     bn_momentum=0.3
+    # )
     # for m in model.modules():
     #     if isinstance(m, torch.nn.BatchNorm2d):
     #         m.train() 
@@ -238,19 +229,15 @@ def load_model(model_path, img_norm, valid_mask, device="cpu", do_bn_calib=True)
     #         print(i, m.running_var.mean().item())
     #         i += 1
     #         if i == 10: break
-
-
     return model
 
 
 def forward_model_committee(
     model_paths,
-    session_models,
     img_norm,
     valid_mask=None,
     class_colors=np.uint8([[0, 255, 255], [255, 130, 0]]),
     device="cpu",
-    calibrate_once_per_session=True
 ):
     """
     Run an ensemble (committee) of segmentation models by averaging logits.
@@ -279,35 +266,37 @@ def forward_model_committee(
         model_paths = [model_paths]
     if len(model_paths) == 0:
         raise ValueError("model_paths is empty")
-
+    
+    # Make sure input is on the right device
     img_norm = img_norm.to(device)
+
     logits_sum = None
 
     for mp in model_paths:
-        if calibrate_once_per_session:
-            if mp not in session_models:
-                # First time ever this session: calibrate using CURRENT image
-                model = load_model(mp, img_norm, valid_mask, device=device, do_bn_calib=True)
-                session_models[mp] = model
-            model = session_models[mp]
-        else:
-            # Old behavior: calibrate every call (or set do_bn_calib=False if you want)
-            model = load_model(mp, img_norm, valid_mask, device=device, do_bn_calib=True)
-
+        model = load_model(mp, img_norm, valid_mask, device="cpu")
+        
         model = model.to(device)
         model.eval()
         with torch.no_grad():
-            logits, _ = model(img_norm)
-
-        logits_sum = logits.detach().clone() if logits_sum is None else (logits_sum + logits.detach())
-
+            logits, _ = model(img_norm)  # (B, C, H, W)
+        
+        if logits_sum is None:
+            logits_sum = logits.detach().clone()
+        else:
+            logits_sum += logits.detach()
+        
+        # free model ASAP (useful on CPU too, and especially on GPU)
+        del model
+    
     logits_avg = logits_sum / float(len(model_paths))
-    probs_map = logits_avg.squeeze(0).softmax(0)
-    pred_map = torch.argmax(probs_map, 0).cpu().numpy()
-    colored_pred_map = class_colors[pred_map]
-
+    
+    # Convert to prediction
+    probs_map = logits_avg.squeeze(0).softmax(0)     # (C, H, W)
+    pred_map = torch.argmax(probs_map, 0).cpu().numpy()  # (H, W)
+    
+    colored_pred_map = class_colors[pred_map]  # (H, W, 3)
+    
     if valid_mask is not None:
         colored_pred_map[~valid_mask] = 255
-
-    return colored_pred_map, session_models
+    return colored_pred_map
 

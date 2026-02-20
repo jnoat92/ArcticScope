@@ -25,7 +25,6 @@ echo Starting PyInstaller build...
 
 pyinstaller main.py ^
   --onedir ^
-  --windowed ^
   --name ArcticScope ^
   --distpath %ROOT% ^
   --add-data "icons;icons" ^
@@ -39,7 +38,16 @@ pyinstaller main.py ^
   --hidden-import fiona ^
   --collect-submodules fiona ^
   --collect-data fiona ^
-  --collect-binaries fiona
+  --collect-binaries fiona ^
+  --collect-submodules numpy ^
+  --collect-data numpy ^
+  --collect-binaries numpy ^
+  --collect-submodules scipy ^
+  --collect-data scipy ^
+  --collect-binaries scipy ^
+  --collect-submodules torch ^
+  --collect-data torch ^
+  --collect-binaries torch
 
 echo.
 echo ============================================
