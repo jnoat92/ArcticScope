@@ -1,7 +1,7 @@
 '''
 Data classes for application state management
 
-Last modified: Jan 2026
+Last modified: Feb 2026
 '''
 
 import numpy as np
@@ -56,6 +56,11 @@ class SceneState:
 
     # Store base land mask for RCM scenes
     base_land_mask: np.ndarray = None
+
+    tie_lines: np.ndarray = None
+    tie_pixels: np.ndarray = None
+    tie_lats: np.ndarray = None
+    tie_lons: np.ndarray = None
 
     # Store geocoded bounds
     geo_coord_helpers: dict[str, float] = field(default_factory=dict)
@@ -129,5 +134,4 @@ class AppState:
     display: DisplaySettings = field(default_factory=DisplaySettings)
     overlay: OverlaySettings = field(default_factory=OverlaySettings)
     anno: AnnotationState = field(default_factory=AnnotationState)
-
 

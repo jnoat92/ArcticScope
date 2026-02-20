@@ -3,7 +3,7 @@ Visualizer module for Remote Sensing Visualizer application
 
 Contains the Visualizer class which manages the GUI and image processing.
 
-Last modified: Jan 2026
+Last modified: Feb 2026
 '''
 import customtkinter as ctk
 import tkinter as tk
@@ -17,8 +17,8 @@ from rasterio.transform import xy
 from ui.evaluation import EvaluationPanel
 from ui.annotation import AnnotationPanel
 from ui.minimap import Minimap
-from core.utils import rgb2gray, generate_boundaries
-from core.io import load_existing_annotation, load_rcm_base_images, run_pred_model, resource_path
+from core.utils import rgb2gray, generate_boundaries, ds_to_src_pixel, tiepoints_1d_to_grid, make_pix2ll
+from core.io import load_existing_annotation, load_rcm_product, load_rcm_base_images, run_pred_model, resource_path
 from core.segmentation import get_segment_contours, IRGS
 from core.overlay import compose_overlay
 from core.render import crop_resize, layer_imagery
@@ -310,10 +310,27 @@ class Visualizer(ctk.CTk):
             command=self.show_annotation_panel
         ).grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
+        # Loading bar at the bottom of the sidebar
+        self.loading_bar_frame = ctk.CTkFrame(self.sidebar)
+        self.loading_bar_frame.pack(fill="x", padx=5, pady=5, side="bottom")
+ 
+        # Loading bar label
+        self.loading_bar_label = ctk.CTkLabel(self.loading_bar_frame, text="", font=ctk.CTkFont(size=12))
+        self.loading_bar = ctk.CTkProgressBar(self.loading_bar_frame, orientation="horizontal", mode="determinate")
+        self.loading_bar.set(0)
+
+        # Set up in grid for hiding and showing
+        self.loading_bar_label.grid(row=0, column=0, padx=5, pady=5, sticky="we")
+        self.loading_bar.grid(row=1, column=0, padx=5, pady=5, sticky="we")
+
+        self.loading_bar_label.grid_remove() # Hide loading bar after short delay
+        self.loading_bar.grid_remove() # Hide loading bar after short delay
+ 
         # Layout behavior inside bottom_container
         self.sidebar.grid_rowconfigure(0, weight=0)
         self.sidebar.grid_rowconfigure(1, weight=0)
         self.sidebar.grid_rowconfigure(2, weight=1)
+        self.sidebar.grid_rowconfigure(3, weight=1)
         self.sidebar.grid_columnconfigure(0, weight=1)
 
         # Minimap frame housing minimap and status bar
@@ -378,8 +395,17 @@ class Visualizer(ctk.CTk):
         scene.land_nan_masks = {}
         scene.boundmasks = {}
 
-        model_path = resource_path("model/Unet_model_12_.pt")
-        variables = run_pred_model(scene.lbl_sources[0], scene.rcm_200m_data, scene.base_land_mask, model_path=model_path, device='cpu')
+        model_paths = []
+        model_folder = resource_path("model")
+
+        for file in os.listdir(model_folder):
+            if file.endswith(".pt"):
+                 model_paths.append(file)
+
+        model_path = model_paths[0] if model_paths else None
+        model_path = os.path.join(model_folder, model_path) if model_path else None
+        variables = run_pred_model(scene.lbl_sources[0], scene.rcm_200m_data, scene.base_land_mask, 
+                                                                  model_path=model_path, device='cpu')
         existing_anno, anno.annotation_notes, self.stored_area_idx = load_existing_annotation(scene.scene_name)
 
         if existing_anno is not None:
@@ -489,36 +515,68 @@ class Visualizer(ctk.CTk):
 
             self.title(f"Scene {scene.scene_name}-{display.channel_mode}")
 
-            # Load base images
-            raw_img, orig_img, hist, n_valid, nan_mask, land_mask, rcm_200m_data, geo_coord_helpers = load_rcm_base_images(scene.folder_path)       
+            # Show loading bar
+            self.loading_bar_label.grid(row=0, column=0)
+            self.loading_bar.grid(row=1, column=0)
+            self.update_idletasks()
 
-            if isinstance(raw_img, FileNotFoundError) or isinstance(raw_img, ValueError):
-                messagebox.showinfo("Error", f"The selected directory does not contain the required files. Please, select a valid directory.\n\n{raw_img}", parent=self.master)
+            self.loading_bar.set(0) # Update loading bar after loading images
+            self.loading_bar_label.configure(text="Loading images...")
+            self.update_idletasks() # Force UI update to show loading bar progress
+
+            try:
+                rcm_data = load_rcm_product(scene.folder_path)
+            except (FileNotFoundError, ValueError) as e:
+                messagebox.showinfo("Error", f"The selected directory does not contain the required files. Please, select a valid directory.\n\n{e}", parent=self.master)
                 scene.folder_path = ''
+                self.loading_bar.set(0) # Update loading bar after loading images
+                self.loading_bar_label.configure(text="Error loading images")
+                self.update_idletasks()
                 return
-            else:
-                # Save raw images to app state for later use (e.g., layering)
-                scene.raw_img = raw_img
-                scene.orig_img = orig_img
-                scene.hist = hist
-                scene.n_valid = n_valid
-                scene.nan_mask = nan_mask
-                scene.base_land_mask = land_mask
-                scene.rcm_200m_data = rcm_200m_data
-                scene.geo_coord_helpers = geo_coord_helpers
 
-                self.img_ = orig_img
-                
-                self.img_["(HH, HH, HV)"] = layer_imagery(
-                    orig_img["HH"],
-                    orig_img["HV"],
-                    stack="(HH, HH, HV)"
-                )
-                self.img_["(HH, HV, HV)"] = layer_imagery(
-                    orig_img["HH"],
-                    orig_img["HV"],
-                    stack="(HH, HV, HV)"
-                )
+            self.loading_bar.set(0.2) # Update loading bar after loading images
+            self.loading_bar_label.configure(text="Pre-processing loaded data...")
+            self.update_idletasks()
+            # Load base images
+            raw_img, orig_img, hist, n_valid, nan_mask, land_mask, rcm_200m_data, geo_coord_helpers = load_rcm_base_images(rcm_data)       
+
+            self.loading_bar.set(0.45) # Update loading bar after loading images
+            self.loading_bar_label.configure(text="Compiling loaded data...")
+            self.update_idletasks() # Force UI update to show loading bar progress
+
+            # Save raw images to app state for later use (e.g., layering)
+            scene.raw_img = raw_img
+            scene.orig_img = orig_img
+            scene.hist = hist
+            scene.n_valid = n_valid
+            scene.nan_mask = nan_mask
+            scene.base_land_mask = land_mask
+            scene.rcm_200m_data = rcm_200m_data
+
+            # Save geo coord helpers to app state for later use
+            scene.geo_coord_helpers = geo_coord_helpers
+            scene.tie_lines = rcm_data.get("tie_lines", None)
+            scene.tie_pixels = rcm_data.get("tie_pixels", None)
+            scene.tie_lats = rcm_data.get("tie_lats", None)
+            scene.tie_lons = rcm_data.get("tie_lons", None)
+
+            # Build tiepoint grid interpolator if available
+            if scene.tie_lines is not None:
+                rows, cols, lat_grid, lon_grid = tiepoints_1d_to_grid(scene.tie_lines, scene.tie_pixels, scene.tie_lats, scene.tie_lons)
+                self.pix2ll = make_pix2ll(rows, cols, lat_grid, lon_grid)
+
+            self.img_ = orig_img
+            
+            self.img_["(HH, HH, HV)"] = layer_imagery(
+                orig_img["HH"],
+                orig_img["HV"],
+                stack="(HH, HH, HV)"
+            )
+            self.img_["(HH, HV, HV)"] = layer_imagery(
+                orig_img["HH"],
+                orig_img["HV"],
+                stack="(HH, HV, HV)"
+            )
             
             # Handle switching scenes with existing custom annotation to one without
             if "Custom_Annotation" in scene.lbl_sources:
@@ -527,7 +585,13 @@ class Visualizer(ctk.CTk):
 
             self.minimap.delete_annotated_areas()
             self.choose_image()
+
+            self.loading_bar.set(0.6)
+            self.loading_bar_label.configure(text="Generating prediction...")
+            self.update_idletasks()
+
             self.load_pred()
+
             if not self.choose_lbl_source(plot=False):
                 scene.folder_path = ''
                 return
@@ -545,6 +609,14 @@ class Visualizer(ctk.CTk):
         self.app_state.display.contrast = 0.0
         self.brightness_slider.set(0) # reset to default
         self.app_state.display.brightness = 0.0
+
+        self.loading_bar.set(1)
+        self.loading_bar_label.configure(text="Inference complete")
+        self.update_idletasks()
+
+        self.after(3000, self.loading_bar_label.grid_remove) # Hide loading bar after short delay
+        self.after(3000, self.loading_bar.grid_remove) # Hide loading bar after short delay
+
 
     def color_composite(self):
         display = self.app_state.display
@@ -766,25 +838,44 @@ class Visualizer(ctk.CTk):
         # Disable select local segmentation mode after selection
         overlay.select_local_segmentation = False
 
-        result = messagebox.askyesno("Local Segmentation Selection",
-                                    "Run unsupervised segmentation on the selected area?",
-                                    parent=self.master)
         self.canvas.delete(self.selection_rect_id)
         self.selection_rect_id = None
         self.selection_start_coord = None
 
-        if result:
-            # Run IRGS on the selected area
-            irgs_output, boundaries = IRGS(overlay.local_segmentation_area, n_classes=15, n_iter=120, mask=~land_nan_mask_crop)
-            overlay.local_segmentation_mask = np.zeros_like(scene.boundmasks[scene.active_source], dtype=np.uint8)
-            overlay.local_segmentation_mask[y_min:y_max, x_min:x_max] = irgs_output
-            overlay.local_segmentation_mask = np.tile(overlay.local_segmentation_mask[:, :, np.newaxis], (1, 1, 3))
+        # Show loading bar
+        self.loading_bar_label.grid(row=0, column=0)
+        self.loading_bar.grid(row=1, column=0)
+        self.update_idletasks()
 
-            overlay.local_segmentation_bounds = np.zeros_like(scene.boundmasks[scene.active_source], dtype=bool)
-            boundaries_bool = boundaries != 1
-            overlay.local_segmentation_bounds[y_min:y_max, x_min:x_max] = boundaries_bool
-            overlay.show_local_segmentation = True
-            self.refresh_view()
+        self.loading_bar.set(0)
+        self.loading_bar_label.configure(text="Running local segmentation...")
+        self.update_idletasks()
+
+        # Run IRGS on the selected area
+        irgs_output, boundaries = IRGS(overlay.local_segmentation_area, n_classes=15, n_iter=120, mask=~land_nan_mask_crop)
+
+        self.loading_bar.set(0.7)
+        self.loading_bar_label.configure(text="Applying segmentation on overlay...")
+        self.update_idletasks()
+
+        overlay.local_segmentation_mask = np.zeros_like(scene.boundmasks[scene.active_source], dtype=np.uint8)
+        overlay.local_segmentation_mask[y_min:y_max, x_min:x_max] = irgs_output
+        overlay.local_segmentation_mask = np.tile(overlay.local_segmentation_mask[:, :, np.newaxis], (1, 1, 3))
+
+        overlay.local_segmentation_bounds = np.zeros_like(scene.boundmasks[scene.active_source], dtype=bool)
+        boundaries_bool = boundaries != 1
+        overlay.local_segmentation_bounds[y_min:y_max, x_min:x_max] = boundaries_bool
+        overlay.show_local_segmentation = True
+
+        self.refresh_view()
+
+        self.loading_bar.set(1)
+        self.loading_bar_label.configure(text="Local segmentation applied")
+        self.update_idletasks()
+
+        self.after(3000, self.loading_bar_label.grid_remove)
+        self.after(3000, self.loading_bar.grid_remove)
+        self.update_idletasks()
 
 
 
@@ -1106,11 +1197,18 @@ class Visualizer(ctk.CTk):
             elif scene.nan_mask["HH"][y, x]:
                 self.status_bar.configure(text=f"Lat: N/A, Lon: N/A")
             else:
-                # Convert downscaled image coordinates to original image coordinates
-                # x and y (row and col) are flipped so flip back before geocoding
-                x, y = xy(scene.geo_coord_helpers["dst_transform"], y, x, offset="center")
-                # Convert image coordinates to geographic coordinates (lat/lon)
-                lon, lat = scene.geo_coord_helpers["transformer"].transform(x, y)
+                # To handle cases where transformer is not available, use tie points to interpolate lat/lon
+                if scene.geo_coord_helpers["transformer"] is None:
+                    row_src, col_src = ds_to_src_pixel(y, x, scene.rcm_200m_data["src_height"], scene.rcm_200m_data["src_width"],
+                                                    scene.rcm_200m_data["dst_height"], scene.rcm_200m_data["dst_width"])
+                    lat, lon = self.pix2ll(row_src, col_src)
+                else:
+                    # Convert downscaled image coordinates to original image coordinates
+                    # x and y (row and col) are flipped so flip back before geocoding
+                    x, y = xy(scene.geo_coord_helpers["dst_transform"], y, x, offset="center")
+                    # Convert image coordinates to geographic coordinates (lat/lon)
+                    lon, lat = scene.geo_coord_helpers["transformer"].transform(x, y)
+                
                 # Convert lat and lon to DMS format
                 lat_dms = self.decimal_to_dms(lat, is_latitude=True)
                 lon_dms = self.decimal_to_dms(lon, is_latitude=False)
