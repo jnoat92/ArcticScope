@@ -627,7 +627,7 @@ def run_pred_model(lbl_source, img, land_mask, model_path, existing_session_mode
         img_norm_t,
         valid_mask=valid_mask,
         device=device,
-        calibrate_once_per_session=True,
+        calibrate_once_per_session=False,
     )
 
     colored_pred_map[land_mask] = [255, 255, 255]
