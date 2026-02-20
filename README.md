@@ -59,7 +59,7 @@ A user manual is included in this repo for a rundown on how to use the app.
 
 ### Setup
 ```bash
-git clone https://github.com/jnoat92/RS-visualizer.git
+git clone https://github.com/jnoat92/ArcticScope.git
 cd <PATH_TO_REPO>
 
 python -m venv .venv
