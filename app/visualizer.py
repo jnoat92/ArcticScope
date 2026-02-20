@@ -18,7 +18,7 @@ from ui.evaluation import EvaluationPanel
 from ui.annotation import AnnotationPanel
 from ui.minimap import Minimap
 from core.utils import rgb2gray, generate_boundaries, ds_to_src_pixel, tiepoints_1d_to_grid, make_pix2ll
-from core.io import load_existing_annotation, load_rcm_product, load_rcm_base_images, run_pred_model, resource_path
+from core.io import load_existing_annotation, load_rcm_product, run_pred_model, scale_hh_hv, build_land_masks, normalize_and_prepare_images, resource_path
 from core.segmentation import get_segment_contours, IRGS
 from core.overlay import compose_overlay
 from core.render import crop_resize, layer_imagery
@@ -535,14 +535,26 @@ class Visualizer(ctk.CTk):
                 return
 
             self.loading_bar.set(0.2) # Update loading bar after loading images
-            self.loading_bar_label.configure(text="Pre-processing loaded data...")
-            self.update_idletasks()
-            # Load base images
-            raw_img, orig_img, hist, n_valid, nan_mask, land_mask, rcm_200m_data, geo_coord_helpers = load_rcm_base_images(rcm_data)       
+            self.loading_bar_label.configure(text="Scaling images...")
+            self.update_idletasks()      
 
-            self.loading_bar.set(0.45) # Update loading bar after loading images
-            self.loading_bar_label.configure(text="Compiling loaded data...")
-            self.update_idletasks() # Force UI update to show loading bar progress
+            # Scale image
+            rcm_200m_data = scale_hh_hv(rcm_data)
+
+            self.loading_bar.set(0.35) # Update loading bar after loading images
+            self.loading_bar_label.configure(text="Building land mask...")
+            self.update_idletasks()  
+
+            # Build land masks
+            land_mask = build_land_masks(rcm_200m_data)
+
+            self.loading_bar.set(0.5) # Update loading bar after loading images
+            self.loading_bar_label.configure(text="Normalizing data...")
+            self.update_idletasks()  
+
+            # Normalize and prepare images
+            raw_img, orig_img, hist, n_valid, nan_mask, geo_coord_helpers = normalize_and_prepare_images(rcm_200m_data)
+
 
             # Save raw images to app state for later use (e.g., layering)
             scene.raw_img = raw_img
