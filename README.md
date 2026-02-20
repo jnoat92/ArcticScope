@@ -71,7 +71,50 @@ pip install -r requirements.txt
 
 **Ensure that you have access to *magic_lib***
 
-### Run
+### Instructions to install magic_lib
+1. Have the magic_lib folder
+2. Set up your environment
+
+The environment used during testing is:
+- Python 3.10.2
+- cmake 4.2.2
+- visual studio 2026 community with Desktop development with C++ build tools installed
+	- MSVC build tools
+	- Windows 11 SDK
+- MinGW-w64 installed for C++ compilers
+	- gcc 15.2.0
+	- g++ 15.2.0
+	- GNU gdb 16.3
+
+3. Python installs
+```bash
+pip install -U pip setuptools wheel cmake ninja
+```
+
+4. Code edits
+In CMakeLists.txt in the main directory, change ```cmake_minimum_required(VERSION 3.4)``` to ```cmake_minimum_required(VERSION 3.15)```
+
+In the same file delete the lines: ```set(PYBIND11_PYTHON_VERSION 3.8 CACHE STRING "")``` and ```set(PYBIND11_PYTHON_VERSION 3.8)```
+
+In pyproject.toml change the contents to:
+```
+[build-system]
+requires = ["setuptools", "wheel", "cmake", "ninja"]
+build-backend = "setuptools.build_meta"
+```
+
+In magic_core/CMakeLists.txt change ```cmake_minimum_required(VERSION 3.4)``` to ```cmake_minimum_required(VERSION 3.15)```
+
+5. Final Installation
+To install magic package, go to root directory of magic_lib in cmd and run
+
+```bash
+pip install -e .
+```
+
+Ensure you are installing with the correct python version (one on PATH)
+
+### Run Program
 ``` bash
 python -m main
 ```
