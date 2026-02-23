@@ -879,6 +879,7 @@ class Visualizer(ctk.CTk):
         overlay.local_segmentation_bounds[y_min:y_max, x_min:x_max] = boundaries_bool
         overlay.show_local_segmentation = True
 
+        self.reset_annotation() # Reset annotation to prevent annotation on old local segmentation
         self.refresh_view()
 
         self.loading_bar.set(1)
@@ -1533,10 +1534,13 @@ class Visualizer(ctk.CTk):
 
     def clear_local_seg(self):
         overlay = self.app_state.overlay
+        if not overlay.show_local_segmentation:
+            return
         overlay.local_segmentation_area = None
         overlay.local_segmentation_mask = None
         overlay.local_segmentation_bounds = None
         overlay.show_local_segmentation = False
+        self.reset_annotation()
         self.refresh_view()
 
 
