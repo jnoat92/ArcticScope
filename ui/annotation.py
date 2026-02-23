@@ -297,6 +297,8 @@ class AnnotationPanel(ctk.CTkFrame):
             self.command_parent.lbl_source_btn[main_key].configure(text=f"* {main_key}")
             self.unsaved_changes = True
             #self.save_button.configure(state=ctk.NORMAL)
+
+            self.command_parent.minimap.clear_selected_annotated_area(anno.selected_polygon_area_idx)
         else:
             # Whole area reset
             scene.predictions[scene.active_source] = scene.predictions[key].copy()
@@ -310,6 +312,7 @@ class AnnotationPanel(ctk.CTkFrame):
             self.command_parent.lbl_source_btn[scene.active_source].configure(text=f"* {scene.active_source}")
             self.unsaved_changes = True
             #self.save_button.configure(state=ctk.NORMAL)
+            self.command_parent.minimap.delete_annotated_areas()
 
     def save_annotation(self):
         scene = self.app_state.scene
