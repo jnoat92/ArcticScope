@@ -503,7 +503,7 @@ class Visualizer(ctk.CTk):
         root = ctk.CTk()
         root.withdraw()
         scene.folder_path = filedialog.askdirectory(initialdir=os.path.dirname(prev_folder_path) if scene.folder_path else os.getcwd(),
-                                                   title='Select the dated directory containing HH/HV and segmentation results')
+                                                   title='Select the dated directory containing HH/HV images')
         root.destroy()
 
         if scene.folder_path:
