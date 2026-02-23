@@ -18,6 +18,8 @@ class Minimap(ctk.CTkFrame):
         self.viewport_item = self.canvas.create_rectangle(0, 0, 0, 0, outline="white", width=2)
 
         self.stored_area_idx = None # Store annotated area indices for saving
+        self.full_img_w = None # Placeholder until image is set
+        self.full_img_h = None # Placeholder until image is set
 
     def set_image(self, img):
         pil_img = Image.fromarray(img.astype('uint8'))
@@ -95,6 +97,7 @@ class Minimap(ctk.CTkFrame):
         return coord_rows
     
     def show_annotated_area(self, polygon_area_idx, color=[255,255,255]):
+        # Convert RGB color to hex string for Tkinter
         color = "#{:02x}{:02x}{:02x}".format(*color)
         if polygon_area_idx is not None:
             minimap_coord_rows = self.polygon_to_minimap_coords(polygon_area_idx)
@@ -128,7 +131,15 @@ class Minimap(ctk.CTkFrame):
         self.canvas.tag_raise("annotated_area")
         self.canvas.tag_raise(self.viewport_item)
 
-    def polygon_to_minimap_coords(self, polygon_points):
+    def clear_selected_annotated_area(self, polygon_area_idx):
+        if polygon_area_idx is not None:
+            minimap_coord_rows = self.polygon_to_minimap_coords(polygon_area_idx, remove=True)
+
+            self.canvas.delete("annotated_area")  # Clear all annotated areas
+            self.show_annotated_area(np.where(self.stored_area_idx)) # Redraw annotated areas except removed one
+
+
+    def polygon_to_minimap_coords(self, polygon_points, remove=False):
         # Recieve polygon points as (y_coords, x_coords)
         y_coords, x_coords = polygon_points
 
@@ -136,49 +147,18 @@ class Minimap(ctk.CTkFrame):
         coord_rows = defaultdict(list)
         for x, y in zip(x_coords, y_coords):
             coord_rows[y].append(x)
-            self.stored_area_idx[y, x] = 1  # Mark annotated area
+            if remove:
+                self.stored_area_idx[y, x] = 0  # Remove annotated area
+            else:
+                self.stored_area_idx[y, x] = 1  # Mark annotated area
 
         return coord_rows
 
-    def show_annotated_area(self, polygon_area_idx, color=[255,255,255]):
-        color = "#{:02x}{:02x}{:02x}".format(*color)
-        minimap_coord_rows = {}
-        if polygon_area_idx is not None:
-            minimap_coord_rows = self.polygon_to_minimap_coords(polygon_area_idx)
-
-            # Scale factors
-            sx = self.mini_img_w / self.full_img_w
-            sy = self.mini_img_h / self.full_img_h
-
-            # Offset factors to center minimap image
-            offset_x = (self.w - self.mini_img_w) / 2
-            offset_y = (self.h - self.mini_img_h) / 2
-
-            for y, xlist in minimap_coord_rows.items():
-                xlist.sort()
-
-                # compress each row into continuous segments
-                start = prev = xlist[0]
-                for x in xlist[1:] + [None]:
-                    if x != prev + 1:
-                        mx0 = start * sx + offset_x
-                        mx1 = (prev + 1) * sx + offset_x
-                        my0 = y * sy + offset_y
-                        my1 = (y + 1) * sy + offset_y
-                        self.canvas.create_rectangle(
-                            mx0, my0, mx1, my1,
-                            fill=color, outline="",
-                            tags=("annotated_area",)
-                        )
-                        start = x
-                    prev = x
-        self.canvas.tag_raise("annotated_area")
-        self.canvas.tag_raise(self.viewport_item)
-
     def delete_annotated_areas(self):
         self.canvas.delete("annotated_area")
-        if self.stored_area_idx is not None:
-            self.stored_area_idx = None  # Clear stored annotations
+        # Reset stored annotated areas
+        if self.full_img_h is not None and self.full_img_w is not None:
+            self.stored_area_idx = np.zeros((self.full_img_h, self.full_img_w), dtype=np.uint8)
 
     def save_annotated_area(self, filepath):
-        np.savez_compressed(filepath, area_idx=self.stored_area_idx)
+        np.savez_compressed(filepath, area_idx=self.stored_area_idx, allow_pickle=True)
