@@ -103,6 +103,7 @@ class OverlaySettings:
     local_segmentation_bounds: np.ndarray = None
     local_segmentation_limits: tuple[int, int, int, int] = None
     local_segmentation_source: str = "HV"
+    local_seg_n_classes: int = 15
 
 # Data class for annotation functions
 @dataclass(slots=True)
