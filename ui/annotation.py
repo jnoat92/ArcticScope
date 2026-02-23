@@ -31,7 +31,7 @@ class AnnotationPanel(ctk.CTkFrame):
 
         # Drawing tools frame
         self.drawing_frame = ctk.CTkFrame(self)
-        self.drawing_frame.grid(row=0, column=0, padx=5, pady=5)
+        self.drawing_frame.grid(row=0, column=0, padx=5, pady=5, sticky="n")
         ctk.CTkLabel(self.drawing_frame, text="Draw Polygon").grid(row=0, column=0, columnspan=3, sticky="nsew", pady=5)
         ctk.CTkButton(self.drawing_frame, text="", image=ctk.CTkImage(Image.open(resource_path("icons/rectangle.png")), size=(20, 20)), 
                       width=20, command=command_parent.draw_rectangle).grid(row=1, column=0, padx=5, pady=5)
@@ -40,7 +40,7 @@ class AnnotationPanel(ctk.CTkFrame):
         
         # Labels for annotation
         self.labels_frame = ctk.CTkFrame(self)
-        self.labels_frame.grid(row=0, column=1, padx=5, pady=5)
+        self.labels_frame.grid(row=0, column=1, padx=5, pady=5, sticky="n")
         ctk.CTkLabel(self.labels_frame, text="Labels").grid(row=0, column=0, columnspan=4, sticky="nsew", pady=5)
         ctk.CTkButton(self.labels_frame, text="ice", width=20, fg_color="#bf803f", text_color="#000000",
                       command=command_parent.label_ice).grid(row=1, column=0, padx=5, pady=5)
@@ -66,7 +66,7 @@ class AnnotationPanel(ctk.CTkFrame):
         
         # Local segmentation frame
         self.local_seg_frame = ctk.CTkFrame(self)
-        self.local_seg_frame.grid(row=0, column=2, padx=5, pady=5)
+        self.local_seg_frame.grid(row=0, column=2, padx=5, pady=5, sticky="n")
         ctk.CTkLabel(self.local_seg_frame, text="Local Segmentation").grid(row=0, column=0, columnspan=3, sticky="nsew", pady=5)
         self.local_segmentation_btn = ctk.CTkButton(self.local_seg_frame, text="Select Area", 
                       width=20, command=self.command_parent.select_area_local_segmentation).grid(row=1, column=0, padx=5, pady=5)
@@ -80,11 +80,14 @@ class AnnotationPanel(ctk.CTkFrame):
         self.local_seg_clear_btn = ctk.CTkButton(self.local_seg_frame, text="Clear Local Seg", 
                       width=20, command=self.command_parent.clear_local_seg).grid(row=1, column=2, padx=5, pady=5)
         
-
+        ctk.CTkLabel(self.local_seg_frame, text="Granularity").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+        self.local_seg_slider = ctk.CTkSlider(self.local_seg_frame, from_=3, to=15, number_of_steps=5, command=self.command_parent.update_local_seg_n_classes)
+        self.local_seg_slider.set(15)
+        self.local_seg_slider.grid(row=2, column=1, columnspan=2, padx=5, pady=5)
 
         # Notes frame
         self.notes_frame = ctk.CTkFrame(self)
-        self.notes_frame.grid(row=0, column=3, padx=5, pady=5, rowspan=2)
+        self.notes_frame.grid(row=0, column=3, padx=5, pady=5, rowspan=3, sticky="n")
         ctk.CTkLabel(self.notes_frame, text="Notes:").grid(row=0, column=0, sticky="w", padx=10)
         self.notes_text = ctk.CTkTextbox(self.notes_frame, width=300, height=100)
         self.notes_text.grid(row=1, column=0, pady=(0, 5), padx=10)

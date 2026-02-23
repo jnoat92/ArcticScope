@@ -864,7 +864,7 @@ class Visualizer(ctk.CTk):
         self.update_idletasks()
 
         # Run IRGS on the selected area
-        irgs_output, boundaries = IRGS(overlay.local_segmentation_area, n_classes=15, n_iter=120, mask=~land_nan_mask_crop)
+        irgs_output, boundaries = IRGS(overlay.local_segmentation_area, n_classes=overlay.local_seg_n_classes, n_iter=120, mask=~land_nan_mask_crop)
 
         self.loading_bar.set(0.7)
         self.loading_bar_label.configure(text="Applying segmentation on overlay...")
@@ -1103,6 +1103,8 @@ class Visualizer(ctk.CTk):
 
             if img_x_max < 0 or img_y_max < 0 or img_x_min < 0 or img_y_min < 0:
                 return  # invalid selection
+            
+            overlay.local_segmentation_limits = (img_x_min, img_y_min, img_x_max, img_y_max)
 
             self.select_local_segmentation_area(img_x_min, img_y_min, img_x_max, img_y_max)
         
@@ -1543,6 +1545,12 @@ class Visualizer(ctk.CTk):
         self.reset_annotation()
         self.refresh_view()
 
+    def update_local_seg_n_classes(self, value):
+        overlay = self.app_state.overlay
+        overlay.local_seg_n_classes = int(value)
+        if overlay.local_segmentation_area is not None:
+            x_min, y_min, x_max, y_max = overlay.local_segmentation_limits
+            self.select_local_segmentation_area(x_min, y_min, x_max, y_max)
 
     # Misc
 
