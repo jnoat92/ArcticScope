@@ -21,6 +21,8 @@ class Minimap(ctk.CTkFrame):
         self.full_img_w = None # Placeholder until image is set
         self.full_img_h = None # Placeholder until image is set
 
+        self.show_prev_anno = True # Flag to control whether to show previous annotations on minimap
+
     def set_image(self, img):
         pil_img = Image.fromarray(img.astype('uint8'))
         pil_img.thumbnail((self.w, self.h), Image.Resampling.LANCZOS) # high-quality downsampling to fit image into minimap
@@ -128,8 +130,12 @@ class Minimap(ctk.CTkFrame):
                         )
                         start = x
                     prev = x
-        self.canvas.tag_raise("annotated_area")
-        self.canvas.tag_raise(self.viewport_item)
+
+        if self.show_prev_anno:
+            self.canvas.tag_raise("annotated_area")
+            self.canvas.tag_raise(self.viewport_item)
+        else:
+            self.canvas.delete("annotated_area")
 
     def clear_selected_annotated_area(self, polygon_area_idx):
         if polygon_area_idx is not None:
@@ -162,3 +168,10 @@ class Minimap(ctk.CTkFrame):
 
     def save_annotated_area(self, filepath):
         np.savez_compressed(filepath, area_idx=self.stored_area_idx, allow_pickle=True)
+
+    def toggle_show_prev_anno(self):
+        self.show_prev_anno = not self.show_prev_anno
+        if self.show_prev_anno:
+            self.show_annotated_area(np.where(self.stored_area_idx))
+        else:
+            self.canvas.delete("annotated_area")

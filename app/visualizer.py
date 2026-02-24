@@ -320,8 +320,8 @@ class Visualizer(ctk.CTk):
         self.loading_bar.set(0)
 
         # Set up in grid for hiding and showing
-        self.loading_bar_label.grid(row=0, column=0, padx=5, pady=5, sticky="we")
-        self.loading_bar.grid(row=1, column=0, padx=5, pady=5, sticky="we")
+        self.loading_bar_label.grid(row=1, column=0, padx=5, pady=5, sticky="we")
+        self.loading_bar.grid(row=2, column=0, padx=5, pady=5, sticky="we")
 
         self.loading_bar_label.grid_remove() # Hide loading bar after short delay
         self.loading_bar.grid_remove() # Hide loading bar after short delay
@@ -346,7 +346,13 @@ class Visualizer(ctk.CTk):
         self.minimap_window_id = self.canvas.create_window(0, 0, window=self.minimap_frame, anchor="se", tags=("minimap"))
         self.canvas.bind("<Configure>", self._update_minimap_position)
         
-
+        self.show_prev_anno_switch = ctk.CTkSwitch(
+            self.loading_bar_frame,
+            text="Show Annotations on Minimap",
+            command=self.minimap.toggle_show_prev_anno
+        )
+        self.show_prev_anno_switch.select()  # Default to showing previous annotations
+        self.show_prev_anno_switch.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
         #%% INITIAL VISUALIZATION / STATE
 
@@ -516,8 +522,10 @@ class Visualizer(ctk.CTk):
             self.title(f"Scene {scene.scene_name}-{display.channel_mode}")
 
             # Show loading bar
-            self.loading_bar_label.grid(row=0, column=0)
-            self.loading_bar.grid(row=1, column=0)
+            self.show_prev_anno_switch.grid_remove()
+            self.update_idletasks() # Needed to ensure the switch is hidden
+            self.loading_bar_label.grid(row=1, column=0)
+            self.loading_bar.grid(row=2, column=0)
             self.update_idletasks()
 
             self.loading_bar.set(0) # Update loading bar after loading images
@@ -628,7 +636,7 @@ class Visualizer(ctk.CTk):
 
         self.after(3000, self.loading_bar_label.grid_remove) # Hide loading bar after short delay
         self.after(3000, self.loading_bar.grid_remove) # Hide loading bar after short delay
-
+        self.show_prev_anno_switch.grid(row=0, column=0, padx=5, pady=5, sticky="w") # Show toggle for annotations on minimap after loading complete
 
     def color_composite(self):
         display = self.app_state.display
@@ -855,8 +863,10 @@ class Visualizer(ctk.CTk):
         self.selection_start_coord = None
 
         # Show loading bar
-        self.loading_bar_label.grid(row=0, column=0)
-        self.loading_bar.grid(row=1, column=0)
+        self.show_prev_anno_switch.grid_remove()
+        self.update_idletasks()
+        self.loading_bar_label.grid(row=1, column=0)
+        self.loading_bar.grid(row=2, column=0)
         self.update_idletasks()
 
         self.loading_bar.set(0)
@@ -888,6 +898,7 @@ class Visualizer(ctk.CTk):
 
         self.after(3000, self.loading_bar_label.grid_remove)
         self.after(3000, self.loading_bar.grid_remove)
+        self.show_prev_anno_switch.grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.update_idletasks()
 
 
