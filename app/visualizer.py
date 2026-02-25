@@ -320,18 +320,11 @@ class Visualizer(ctk.CTk):
         self.loading_bar.set(0)
 
         # Set up in grid for hiding and showing
-        self.loading_bar_label.grid(row=1, column=0, padx=5, pady=5, sticky="we")
-        self.loading_bar.grid(row=2, column=0, padx=5, pady=5, sticky="we")
+        self.loading_bar_label.grid(row=0, column=0, padx=5, pady=5, sticky="we")
+        self.loading_bar.grid(row=1, column=0, padx=5, pady=5, sticky="we")
 
         self.loading_bar_label.grid_remove() # Hide loading bar after short delay
         self.loading_bar.grid_remove() # Hide loading bar after short delay
- 
-        # Layout behavior inside bottom_container
-        self.sidebar.grid_rowconfigure(0, weight=0)
-        self.sidebar.grid_rowconfigure(1, weight=0)
-        self.sidebar.grid_rowconfigure(2, weight=1)
-        self.sidebar.grid_rowconfigure(3, weight=1)
-        self.sidebar.grid_columnconfigure(0, weight=1)
 
         # Minimap frame housing minimap and status bar
         self.minimap_frame = ctk.CTkFrame(self.canvas, width=200, height=200, corner_radius=12)
@@ -346,13 +339,21 @@ class Visualizer(ctk.CTk):
         self.minimap_window_id = self.canvas.create_window(0, 0, window=self.minimap_frame, anchor="se", tags=("minimap"))
         self.canvas.bind("<Configure>", self._update_minimap_position)
         
+        # Add toggle for showing previous annotations on minimap right below annotation button
         self.show_prev_anno_switch = ctk.CTkSwitch(
-            self.loading_bar_frame,
+            self.operation_frame,
             text="Show Annotations on Minimap",
             command=self.minimap.toggle_show_prev_anno
         )
         self.show_prev_anno_switch.select()  # Default to showing previous annotations
-        self.show_prev_anno_switch.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.show_prev_anno_switch.grid(row=2, column=0, padx=5, pady=5, sticky="w")
+
+        # Layout behavior inside bottom_container
+        self.sidebar.grid_rowconfigure(0, weight=0)
+        self.sidebar.grid_rowconfigure(1, weight=0)
+        self.sidebar.grid_rowconfigure(2, weight=1)
+        self.sidebar.grid_rowconfigure(3, weight=1)
+        self.sidebar.grid_columnconfigure(0, weight=1)
 
         #%% INITIAL VISUALIZATION / STATE
 
@@ -522,10 +523,8 @@ class Visualizer(ctk.CTk):
             self.title(f"Scene {scene.scene_name}-{display.channel_mode}")
 
             # Show loading bar
-            self.show_prev_anno_switch.grid_remove()
-            self.update_idletasks() # Needed to ensure the switch is hidden
-            self.loading_bar_label.grid(row=1, column=0)
-            self.loading_bar.grid(row=2, column=0)
+            self.loading_bar_label.grid(row=0, column=0)
+            self.loading_bar.grid(row=1, column=0)
             self.update_idletasks()
 
             self.loading_bar.set(0) # Update loading bar after loading images
@@ -636,7 +635,6 @@ class Visualizer(ctk.CTk):
 
         self.after(3000, self.loading_bar_label.grid_remove) # Hide loading bar after short delay
         self.after(3000, self.loading_bar.grid_remove) # Hide loading bar after short delay
-        self.show_prev_anno_switch.grid(row=0, column=0, padx=5, pady=5, sticky="w") # Show toggle for annotations on minimap after loading complete
 
     def color_composite(self):
         display = self.app_state.display
@@ -863,10 +861,8 @@ class Visualizer(ctk.CTk):
         self.selection_start_coord = None
 
         # Show loading bar
-        self.show_prev_anno_switch.grid_remove()
-        self.update_idletasks()
-        self.loading_bar_label.grid(row=1, column=0)
-        self.loading_bar.grid(row=2, column=0)
+        self.loading_bar_label.grid(row=0, column=0)
+        self.loading_bar.grid(row=1, column=0)
         self.update_idletasks()
 
         self.loading_bar.set(0)
@@ -898,7 +894,6 @@ class Visualizer(ctk.CTk):
 
         self.after(3000, self.loading_bar_label.grid_remove)
         self.after(3000, self.loading_bar.grid_remove)
-        self.show_prev_anno_switch.grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.update_idletasks()
 
 
@@ -1184,10 +1179,10 @@ class Visualizer(ctk.CTk):
                     for j in range(len(contours[i])):
                         if contours[i][j][1] <= overlay.local_segmentation_limits[0]+0.5 or contours[i][j][1] >= overlay.local_segmentation_limits[2]-0.5 or \
                             contours[i][j][0] <= overlay.local_segmentation_limits[1]+0.5 or contours[i][j][0] >= overlay.local_segmentation_limits[3]-0.5:
+                            print("Selected segment includes border region")
                             self.reset_annotation()
                             return
             else:
-                # Change scene,predictions to irgs for unsupervised segmentation
                 contours, mask = get_segment_contours(scene.predictions[scene.active_source], y, x)
 
             # select polygon area on image

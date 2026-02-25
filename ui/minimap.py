@@ -32,7 +32,7 @@ class Minimap(ctk.CTkFrame):
         self.full_img_w, self.full_img_h = img.shape[1], img.shape[0]
 
         if self.stored_area_idx is None:
-            self.stored_area_idx = np.zeros((self.full_img_h, self.full_img_w), dtype=np.uint8)
+            self.stored_area_idx = np.zeros((self.full_img_h + 1, self.full_img_w + 1), dtype=np.uint8)
 
         minimap_img = ImageTk.PhotoImage(pil_img)
         self.tk_img_ref = minimap_img  # keep reference
@@ -68,7 +68,9 @@ class Minimap(ctk.CTkFrame):
                            x1 + offset_x, 
                            y1 + offset_y)
         
-        self.canvas.tag_raise(self.viewport_item)
+        # Panning and zooming is slow while minimap annotations are shown, need to find a way to optimize this
+        
+        #self.canvas.tag_raise(self.viewport_item)
 
     def get_viewport_coords(self, image, zoom_factor, offset_x, offset_y, canvas_width, canvas_height):
         h, w = image.shape[:2]
@@ -86,17 +88,7 @@ class Minimap(ctk.CTkFrame):
         view_right = max(0, min(w, img_right))
 
         return view_top, view_bottom, view_left, view_right
-        
-    def polygon_to_minimap_coords(self, polygon_points):
-        # Recieve polygon points as (y_coords, x_coords)
-        y_coords, x_coords = polygon_points
 
-        # Might be slower for large polygons, but easier to group by rows and display
-        coord_rows = defaultdict(list)
-        for x, y in zip(x_coords, y_coords):
-            coord_rows[y].append(x)
-
-        return coord_rows
     
     def show_annotated_area(self, polygon_area_idx, color=[255,255,255]):
         # Convert RGB color to hex string for Tkinter
@@ -172,6 +164,6 @@ class Minimap(ctk.CTkFrame):
     def toggle_show_prev_anno(self):
         self.show_prev_anno = not self.show_prev_anno
         if self.show_prev_anno:
-            self.show_annotated_area(np.where(self.stored_area_idx))
+            self.canvas.itemconfig("annotated_area", state="normal")
         else:
-            self.canvas.delete("annotated_area")
+            self.canvas.itemconfig("annotated_area", state="hidden")
