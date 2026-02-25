@@ -19,7 +19,7 @@ from ui.annotation import AnnotationPanel
 from ui.minimap import Minimap
 from core.utils import rgb2gray, generate_boundaries, ds_to_src_pixel, tiepoints_1d_to_grid, make_pix2ll
 from core.io import load_existing_annotation, load_rcm_product, run_pred_model, scale_hh_hv, build_land_masks, normalize_and_prepare_images, resource_path
-from core.segmentation import get_segment_contours, IRGS
+from core.segmentation import get_segment_contours, IRGS, remove_edge_touching_polygons
 from core.overlay import compose_overlay
 from core.render import crop_resize, layer_imagery
 from core.contrast_handler import enhance_outlier_slider
@@ -865,6 +865,8 @@ class Visualizer(ctk.CTk):
 
         # Run IRGS on the selected area
         irgs_output, boundaries = IRGS(overlay.local_segmentation_area, n_classes=overlay.local_seg_n_classes, n_iter=120, mask=~land_nan_mask_crop)
+
+        irgs_output, boundaries = remove_edge_touching_polygons(irgs_output)
 
         self.loading_bar.set(0.7)
         self.loading_bar_label.configure(text="Applying segmentation on overlay...")
