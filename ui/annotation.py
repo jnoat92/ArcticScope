@@ -81,7 +81,7 @@ class AnnotationPanel(ctk.CTkFrame):
                       width=20, command=self.command_parent.clear_local_seg).grid(row=1, column=2, padx=5, pady=5)
         
         ctk.CTkLabel(self.local_seg_frame, text="Granularity").grid(row=2, column=0, sticky="e", padx=5, pady=5)
-        self.local_seg_slider = ctk.CTkSlider(self.local_seg_frame, from_=3, to=15, number_of_steps=5, command=self.command_parent.update_local_seg_n_classes)
+        self.local_seg_slider = ctk.CTkSlider(self.local_seg_frame, from_=3, to=15, number_of_steps=12, command=self.command_parent.update_local_seg_n_classes)
         self.local_seg_slider.set(15)
         self.local_seg_slider.grid(row=2, column=1, columnspan=2, padx=5, pady=5)
 
