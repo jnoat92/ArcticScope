@@ -7,8 +7,9 @@ Last modified: Feb 2026
 import numpy as np
 from shapely import polygons
 from skimage.measure import find_contours, label
-from skimage.segmentation import find_boundaries
 from magic_py.magic_rag import magic_rag
+
+from core.utils import erase_edge_touching_polygons_numba
 
 def get_segment_contours(pred, x, y):
     target_rgb = pred[x, y]
@@ -90,60 +91,13 @@ def one_pixel_boundaries(polygons, background=None):
     return boundaries
 
 def remove_edge_touching_polygons(irgs_output):
-    # Get only the enclosed polygons that don't touch the edges of the selected area
-    rows, cols = len(irgs_output), len(irgs_output[0])
-    polygons = irgs_output.copy()
-    
-    if rows == 0 or cols == 0:
-        return irgs_output, np.ones_like(irgs_output, dtype=np.int8)  # No valid area, return empty boundaries
-
-    visited = set()
-    stack = []
-
-    def push_if_border(r, c):
-        stack.append((r, c))
-
-    # add all border cells
-    for c in range(cols):
-        push_if_border(0, c)
-        push_if_border(rows-1, c)
-    for r in range(rows):
-        push_if_border(r, 0)
-        push_if_border(r, cols-1)
-
-    # flood-fill from each border cell
-    while stack:
-        r, c = stack.pop()
-        if (r, c) in visited:
-            continue
-
-        val = polygons[r, c]
-        # If it's already -1 from a previous fill, treat it as "already erased"
-        if val == -1:
-            continue
-
-        # DFS this component of same 'val'
-        comp_stack = [(r, c)]
-        component_cells = []
-
-        while comp_stack:
-            x, y = comp_stack.pop()
-            if (x, y) in visited:
-                continue
-            if polygons[x, y] != val:
-                continue
-
-            visited.add((x, y))
-            component_cells.append((x, y))
-
-            if x > 0:     comp_stack.append((x-1, y))
-            if x < rows-1:   comp_stack.append((x+1, y))
-            if y > 0:     comp_stack.append((x, y-1))
-            if y < cols-1:   comp_stack.append((x, y+1))
-
-        # This entire component is reachable from the border so set to -1
-        for x, y in component_cells:
-            polygons[x, y] = -1
+    '''   
+    Get only the enclosed polygons that don't touch the edges of the selected area
+    Set the polygons touching the edges to -1
+    '''
+    # Using numba-optimized version instead of pure Python for performance
+    polygons = np.array(irgs_output, dtype=np.int32)  # ensure numpy
+    erase_edge_touching_polygons_numba(polygons, background=-1)
 
     boundaries = one_pixel_boundaries(polygons).astype(np.int8)
     boundaries[boundaries == 1] = -1

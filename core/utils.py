@@ -155,3 +155,91 @@ def make_pix2ll(rows, cols, lat_grid, lon_grid):
         return float(lat), float(lon)
 
     return pix2ll
+
+
+@njit(cache=True)
+def erase_edge_touching_polygons_numba(polygons, background=-1):
+    '''
+    Perform a flood_fill from the edges to find all polygons that touch the edge
+    Set all edge-touching polygons to background value
+    '''
+
+    rows, cols = polygons.shape
+    if rows == 0 or cols == 0:
+        return
+
+    visited = np.zeros((rows, cols), dtype=np.uint8)
+
+    # Border stack (linear indices)
+    border_stack = np.empty(rows * cols, dtype=np.int32)
+    bsp = 0
+
+    # push border cells (duplicates ok; visited will skip)
+    # store as linear indices, can decompose to (r, c) by r = idx // cols, c = idx % cols
+    for c in range(cols):
+        border_stack[bsp] = 0 * cols + c; bsp += 1
+        border_stack[bsp] = (rows - 1) * cols + c; bsp += 1
+    for r in range(rows):
+        border_stack[bsp] = r * cols + 0; bsp += 1
+        border_stack[bsp] = r * cols + (cols - 1); bsp += 1
+
+    # Component DFS stack + component storage (both linear indices)
+    comp_stack = np.empty(rows * cols, dtype=np.int32)
+    comp_cells = np.empty(rows * cols, dtype=np.int32)
+
+    # flood-fill from each border cell
+    while bsp > 0:
+        bsp -= 1
+        idx = border_stack[bsp]
+        r = idx // cols
+        c = idx - r * cols
+
+        if visited[r, c] == 1:
+            continue
+
+        val = polygons[r, c]
+        visited[r, c] = 1
+
+        if val == background:
+            continue
+
+        # DFS the component of same `val`
+        csp = 0
+        comp_stack[csp] = idx
+        csp += 1
+
+        keep = 0  # number of cells in this component
+
+        while csp > 0:
+            csp -= 1
+            cur = comp_stack[csp]
+            x = cur // cols
+            y = cur - x * cols
+
+            if visited[x, y] == 1 and (x != r or y != c):
+                # already processed from another seed
+                continue
+
+            if polygons[x, y] != val:
+                continue
+
+            visited[x, y] = 1
+            comp_cells[keep] = cur
+            keep += 1
+
+            # push neighbors
+            if x > 0 and visited[x - 1, y] == 0:
+                comp_stack[csp] = (x - 1) * cols + y; csp += 1
+            if x < rows - 1 and visited[x + 1, y] == 0:
+                comp_stack[csp] = (x + 1) * cols + y; csp += 1
+            if y > 0 and visited[x, y - 1] == 0:
+                comp_stack[csp] = x * cols + (y - 1); csp += 1
+            if y < cols - 1 and visited[x, y + 1] == 0:
+                comp_stack[csp] = x * cols + (y + 1); csp += 1
+
+        # Component is border-reachable => erase it
+        for i in range(keep):
+            pos = comp_cells[i]
+            x = pos // cols
+            y = pos - x * cols
+            polygons[x, y] = background
