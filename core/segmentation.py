@@ -1,7 +1,7 @@
 '''
 Segmentation related functions
 
-Last modified: Jan 2026
+Last modified: Feb 2026
 '''
 
 import numpy as np
@@ -64,6 +64,31 @@ def IRGS(img, n_classes, n_iter, mask=None):
     irgs_output = Map_labels(irgs_output)
     return irgs_output, boundaries
 
+def one_pixel_boundaries(polygons, background=None):
+    """
+    Returns a boolean boundary mask that is 1-pixel thick.
+    Marks a pixel (r,c) as boundary if it differs from its right or down neighbor.
+    Tie-break: boundary pixel belongs to the current pixel (top/left side).
+    """
+    polygons = np.asarray(polygons)
+
+    boundaries = np.zeros(polygons.shape, dtype=bool)
+
+    # compare with right neighbor
+    # get all pixels except last column and compare with all pixels except first column
+    diff_right = polygons[:, :-1] != polygons[:, 1:]
+    boundaries[:, :-1] |= diff_right
+
+    # compare with down neighbor
+    # get all pixels except last row and compare with all pixels except first row
+    diff_down = polygons[:-1, :] != polygons[1:, :]
+    boundaries[:-1, :] |= diff_down
+
+    if background is not None:
+        boundaries &= (polygons != background)  # optional: don't draw boundaries *on* background pixels
+
+    return boundaries
+
 def remove_edge_touching_polygons(irgs_output):
     # Get only the enclosed polygons that don't touch the edges of the selected area
     rows, cols = len(irgs_output), len(irgs_output[0])
@@ -120,7 +145,7 @@ def remove_edge_touching_polygons(irgs_output):
         for x, y in component_cells:
             polygons[x, y] = -1
 
-    boundaries = find_boundaries(polygons, mode='outer', connectivity=1, background=-1).astype(np.int8)
+    boundaries = one_pixel_boundaries(polygons).astype(np.int8)
     boundaries[boundaries == 1] = -1
     boundaries[boundaries == 0] = 1
 
