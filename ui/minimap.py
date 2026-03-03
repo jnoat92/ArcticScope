@@ -124,10 +124,11 @@ class Minimap(ctk.CTkFrame):
                     prev = x
 
         if self.show_prev_anno:
+            self.canvas.itemconfig("annotated_area", state="normal")
             self.canvas.tag_raise("annotated_area")
             self.canvas.tag_raise(self.viewport_item)
         else:
-            self.canvas.delete("annotated_area")
+            self.canvas.itemconfig("annotated_area", state="hidden")
 
     def clear_selected_annotated_area(self, polygon_area_idx):
         if polygon_area_idx is not None:
