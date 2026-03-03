@@ -1550,6 +1550,10 @@ class Visualizer(ctk.CTk):
         else:
             overlay.local_segmentation_source = "HH"
 
+        if overlay.local_segmentation_area is not None:
+            x_min, y_min, x_max, y_max = overlay.local_segmentation_limits
+            self.select_local_segmentation_area(x_min, y_min, x_max, y_max)
+
     def clear_local_seg(self):
         overlay = self.app_state.overlay
         if not overlay.show_local_segmentation:
