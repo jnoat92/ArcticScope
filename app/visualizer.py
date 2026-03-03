@@ -19,7 +19,7 @@ from ui.annotation import AnnotationPanel
 from ui.minimap import Minimap
 from core.utils import rgb2gray, generate_boundaries, ds_to_src_pixel, tiepoints_1d_to_grid, make_pix2ll
 from core.io import load_existing_annotation, load_rcm_product, run_pred_model, scale_hh_hv, build_land_masks, normalize_and_prepare_images, resource_path
-from core.segmentation import get_segment_contours, IRGS
+from core.segmentation import get_segment_contours, IRGS, remove_edge_touching_polygons
 from core.overlay import compose_overlay
 from core.render import crop_resize, layer_imagery
 from core.contrast_handler import enhance_outlier_slider
@@ -866,6 +866,12 @@ class Visualizer(ctk.CTk):
         # Run IRGS on the selected area
         irgs_output, boundaries = IRGS(overlay.local_segmentation_area, n_classes=overlay.local_seg_n_classes, n_iter=120, mask=~land_nan_mask_crop)
 
+        self.loading_bar.set(0.4)
+        self.loading_bar_label.configure(text="Clearing border polygons...")
+        self.update_idletasks()
+
+        irgs_output, boundaries = remove_edge_touching_polygons(irgs_output)
+
         self.loading_bar.set(0.7)
         self.loading_bar_label.configure(text="Applying segmentation on overlay...")
         self.update_idletasks()
@@ -1167,16 +1173,26 @@ class Visualizer(ctk.CTk):
             if overlay.show_local_segmentation:
                 # Change scene.predictions to local irgs for unsupervised segmentation
                 contours, mask = get_segment_contours(overlay.local_segmentation_mask, y, x)
-
-                # Check if selected segment includes border region
+                selected_outside = False
+                # Check if selected segment includes border region, may not be needed with edge-touching polygons removed
                 for i in range(len(contours)):
+                    if selected_outside:
+                        break
                     for j in range(len(contours[i])):
-                        if contours[i][j][1] <= overlay.local_segmentation_limits[0]+0.5 or contours[i][j][1] >= overlay.local_segmentation_limits[2]-0.5 or \
-                            contours[i][j][0] <= overlay.local_segmentation_limits[1]+0.5 or contours[i][j][0] >= overlay.local_segmentation_limits[3]-0.5:
-                            self.reset_annotation()
-                            return
+                        if contours[i][j][1] <= overlay.local_segmentation_limits[0]-0.5 or contours[i][j][1] >= overlay.local_segmentation_limits[2]+0.5 or \
+                            contours[i][j][0] <= overlay.local_segmentation_limits[1]-0.5 or contours[i][j][0] >= overlay.local_segmentation_limits[3]+0.5:
+                            result = messagebox.askyesno("Selection Not Part of Local Segmentation", "Selecting a polygon not part of the local segmentation view will close the local segmentation view.\n\nClose local segmentation view?", parent=self.master)
+                            
+                            if result: # Close local segmentation view and get contours from prediction
+                                overlay.show_local_segmentation = False
+                                selected_outside = True
+                                self.refresh_view()
+                                # Change to scene.predictions for selection
+                                contours, mask = get_segment_contours(scene.predictions[scene.active_source], y, x)
+                                break
+                            else:
+                                return
             else:
-                # Change scene,predictions to irgs for unsupervised segmentation
                 contours, mask = get_segment_contours(scene.predictions[scene.active_source], y, x)
 
             # select polygon area on image
@@ -1533,6 +1549,10 @@ class Visualizer(ctk.CTk):
             overlay.local_segmentation_source = "HV"
         else:
             overlay.local_segmentation_source = "HH"
+
+        if overlay.local_segmentation_area is not None:
+            x_min, y_min, x_max, y_max = overlay.local_segmentation_limits
+            self.select_local_segmentation_area(x_min, y_min, x_max, y_max)
 
     def clear_local_seg(self):
         overlay = self.app_state.overlay

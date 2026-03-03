@@ -1,12 +1,15 @@
 '''
 Segmentation related functions
 
-Last modified: Jan 2026
+Last modified: Feb 2026
 '''
 
 import numpy as np
+from shapely import polygons
 from skimage.measure import find_contours, label
 from magic_py.magic_rag import magic_rag
+
+from core.utils import erase_edge_touching_polygons_numba
 
 def get_segment_contours(pred, x, y):
     target_rgb = pred[x, y]
@@ -61,3 +64,43 @@ def IRGS(img, n_classes, n_iter, mask=None):
                                                 # label -2 for landmask and boundaries\
     irgs_output = Map_labels(irgs_output)
     return irgs_output, boundaries
+
+def one_pixel_boundaries(polygons, background=None):
+    """
+    Returns a boolean boundary mask that is 1-pixel thick.
+    Marks a pixel (r,c) as boundary if it differs from its right or down neighbor.
+    Tie-break: boundary pixel belongs to the current pixel (top/left side).
+    """
+    polygons = np.asarray(polygons)
+
+    boundaries = np.zeros(polygons.shape, dtype=bool)
+
+    # compare with right neighbor
+    # get all pixels except last column and compare with all pixels except first column
+    diff_right = polygons[:, :-1] != polygons[:, 1:]
+    boundaries[:, :-1] |= diff_right
+
+    # compare with down neighbor
+    # get all pixels except last row and compare with all pixels except first row
+    diff_down = polygons[:-1, :] != polygons[1:, :]
+    boundaries[:-1, :] |= diff_down
+
+    if background is not None:
+        boundaries &= (polygons != background)  # optional: don't draw boundaries *on* background pixels
+
+    return boundaries
+
+def remove_edge_touching_polygons(irgs_output):
+    '''   
+    Get only the enclosed polygons that don't touch the edges of the selected area
+    Set the polygons touching the edges to -1
+    '''
+    # Using numba-optimized version instead of pure Python for performance
+    polygons = np.array(irgs_output, dtype=np.int32)  # ensure numpy
+    erase_edge_touching_polygons_numba(polygons, background=-1)
+
+    boundaries = one_pixel_boundaries(polygons).astype(np.int8)
+    boundaries[boundaries == 1] = -1
+    boundaries[boundaries == 0] = 1
+
+    return polygons, boundaries
