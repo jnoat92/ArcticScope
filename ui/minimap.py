@@ -15,7 +15,7 @@ class Minimap(ctk.CTkFrame):
 
         self.tk_img_ref = None
         self.img_item = None
-        self.viewport_item = self.canvas.create_rectangle(0, 0, 0, 0, outline="white", width=2)
+        self.viewport_item = self.canvas.create_rectangle(0, 0, 0, 0, outline="yellow", width=2)
 
         self.stored_area_idx = None # Store annotated area indices for saving
         self.full_img_w = None # Placeholder until image is set

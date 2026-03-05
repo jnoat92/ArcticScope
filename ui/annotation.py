@@ -42,10 +42,25 @@ class AnnotationPanel(ctk.CTkFrame):
         self.labels_frame = ctk.CTkFrame(self)
         self.labels_frame.grid(row=0, column=1, padx=5, pady=5, sticky="n")
         ctk.CTkLabel(self.labels_frame, text="Labels").grid(row=0, column=0, columnspan=4, sticky="nsew", pady=5)
-        ctk.CTkButton(self.labels_frame, text="ice", width=20, fg_color="#bf803f", text_color="#000000",
-                      command=command_parent.label_ice).grid(row=1, column=0, padx=5, pady=5)
-        ctk.CTkButton(self.labels_frame, text="water", width=20, fg_color="#3fbfbf", text_color="#000000",
-                      command=command_parent.label_water).grid(row=1, column=1, padx=5, pady=5)
+        self.ice_btn = ctk.CTkButton(self.labels_frame, text="ice", width=20, fg_color="#bf803f", text_color="#000000",
+                      command=command_parent.label_ice)
+        self.ice_btn.grid(row=1, column=0, padx=5, pady=5)
+        self.water_btn = ctk.CTkButton(self.labels_frame, text="water", width=20, fg_color="#3fbfbf", text_color="#000000",
+                      command=command_parent.label_water)
+        self.water_btn.grid(row=1, column=1, padx=5, pady=5)
+
+        self.ice_btn.bind("<Button-3>", lambda e: command_parent.bucket_fill(e, "ice"))
+        self.water_btn.bind("<Button-3>", lambda e: command_parent.bucket_fill(e, "water"))
+        
+        self.label_btn_default_style = {     # store default style
+            "text_color": self.ice_btn.cget("text_color"),
+            "font": self.ice_btn.cget("font")
+        }
+        self.label_btn_active_style = {      # define active style
+            "text_color": "white",
+            "font": ctk.CTkFont(family="Segoe UI", size=13, weight="bold")
+        }
+
         # Other options dropdown
         self.other_options_list = ["shoal", "ship", "iceberg", "unknown"]
         self.other_options_color = {
@@ -101,6 +116,8 @@ class AnnotationPanel(ctk.CTkFrame):
 
         self.unsaved_changes = False
         self.save_button.configure(state=ctk.NORMAL)
+
+        self.bind("<Escape>", command_parent.exit_bucket_fill)
 
     def select_other_label(self, choice):
         # Using if, elif for ensuring version compatibility
@@ -382,16 +399,6 @@ class AnnotationPanel(ctk.CTkFrame):
 
     def clear_notes(self):
         self.notes_text.delete("1.0", "end")
-
-
-    def draw_rectangle(self):
-        pass
-    def draw_polygon(self):
-        pass
-    def label_ice(self):
-        pass
-    def label_water(self):
-        pass
         
 
 # if __name__ == '__main__':

@@ -3,7 +3,7 @@ Visualizer module for Remote Sensing Visualizer application
 
 Contains the Visualizer class which manages the GUI and image processing.
 
-Last modified: Feb 2026
+Last modified: Mar 2026
 '''
 import customtkinter as ctk
 import tkinter as tk
@@ -49,6 +49,7 @@ class Visualizer(ctk.CTk):
         self.geometry(f"{window_width}x{window_height}")
 
         #%% Initial state
+        self.selection_start_coord = None
 
         # Annotation state
         self.annotation_mode = None  # 'rectangle' or None
@@ -76,13 +77,17 @@ class Visualizer(ctk.CTk):
         self.canvas.bind("<Button-4>", self._on_mousewheel)    # Linux scroll up
         self.canvas.bind("<Button-5>", self._on_mousewheel)    # Linux scroll down
 
-        self.canvas.bind("<ButtonPress-1>", self._on_left_click)
+        self.canvas.bind("<ButtonPress-1>", self._on_left_click_await)
         self.canvas.bind("<B1-Motion>", self._on_left_drag)
         self.canvas.bind("<ButtonRelease-1>", self._on_left_release)
 
         self.canvas.bind("<Button-3>", self.on_right_click)
-        self.canvas.bind("<Double-Button-1>", self.on_double_click)
+        self.canvas.bind("<Double-Button-1>", self.on_double_click_set_flag)
         self.canvas.bind("<Motion>", self.on_mouse_move)
+
+        self.bind("<Escape>", self.exit_bucket_fill)
+
+        self.double_click_flag = False
 
 
         # ==================== CONTROL PANELS (STACKED VERTICALLY)
@@ -784,6 +789,8 @@ class Visualizer(ctk.CTk):
         state = "ON" if overlay_state.show_overlay else "OFF"
         self.segmentation_toggle_btn.configure(text=state)
 
+        self.display_image()
+
         if overlay_state.show_overlay:
             # Restore default appearance
             self.segmentation_toggle_btn.configure(
@@ -798,8 +805,6 @@ class Visualizer(ctk.CTk):
                 hover_color="#777777",  # Slightly darker on hover
                 text_color="white"
             )
-
-        self.display_image()
 
         if self.app_state.anno.polygon_points_img_coor: 
             self.draw_polygon_on_canvas()
@@ -988,6 +993,16 @@ class Visualizer(ctk.CTk):
         if self.app_state.anno.polygon_points_img_coor:
             self.draw_polygon_on_canvas()
 
+    def _on_left_click_await(self, event):
+        self.after(200, lambda: self.choose_click_event(event))
+
+    def choose_click_event(self, event):
+        if self.double_click_flag:
+            self.on_double_click(event)
+            self.double_click_flag = False
+        else:
+            self._on_left_click(event)
+
     def _on_left_click(self, event):
         """Handle left mouse click for zoom selection, panning, rectangle, or polygon drawing."""
         view = self.app_state.view
@@ -1006,6 +1021,14 @@ class Visualizer(ctk.CTk):
                 self.selected_polygon = self.canvas.create_rectangle(event.x, event.y, event.x, event.y, outline='yellow', width=2)
         elif anno.annotation_mode == 'polygon':
                 self._add_polygon_point(event)
+        elif anno.annotation_mode == 'bucket_fill':
+            x = round(np.float64((event.x - view.offset_x) / view.zoom_factor))
+            y = round(np.float64((event.y - view.offset_y) / view.zoom_factor))
+            if anno.selected_polygon_area_idx is None or \
+                (y,x) not in zip(anno.selected_polygon_area_idx[0], anno.selected_polygon_area_idx[1]):
+                self.on_double_click(event) # Use double-click handler for bucket fill
+            else:
+                self.bucket_fill_polygon_area(event)
         else:
             # Start pan
             view.pan_start_screen = (event.x, event.y)
@@ -1049,6 +1072,11 @@ class Visualizer(ctk.CTk):
         scene = self.app_state.scene
         overlay = self.app_state.overlay
         anno = self.app_state.anno
+        if anno.annotation_mode == 'bucket_fill':
+            self.canvas.config(cursor="spraycan")
+        else:
+            self.canvas.config(cursor="")
+
         if view.zoom_select_mode and self.selection_start_coord:
             # Complete selection and zoom
             x0, y0 = self.selection_start_coord
@@ -1060,7 +1088,6 @@ class Visualizer(ctk.CTk):
             self.selection_start_coord = None
             view.zoom_select_mode = False
             self.zoom_select_btn.configure(**self.zoom_btn_default_style)
-            self.canvas.config(cursor="")
 
             # Convert canvas to image coords
             x_min = min(x0, x1)
@@ -1090,9 +1117,6 @@ class Visualizer(ctk.CTk):
             # Complete selection and zoom
             x0, y0 = self.selection_start_coord
             x1, y1 = event.x, event.y
-
-            # Reset variables
-            self.canvas.config(cursor="")
 
             # Convert canvas to image coords
             x_min = min(x0, x1)
@@ -1141,6 +1165,9 @@ class Visualizer(ctk.CTk):
         if self.app_state.anno.annotation_mode == 'polygon':
             self._finish_polygon()
 
+    def on_double_click_set_flag(self, event):
+        self.double_click_flag = True
+
     def on_double_click(self, event):
         """Handle double-click to select polygon."""
         view = self.app_state.view
@@ -1155,7 +1182,6 @@ class Visualizer(ctk.CTk):
                 if self.annotation_panel.zoom_window.winfo_viewable():            
                     self.annotation_panel.zoom_window.destroy()
 
-            anno.annotation_mode = 'selection'
             self.reset_annotation()
 
             x = int((event.x - view.offset_x) / view.zoom_factor)
@@ -1219,6 +1245,11 @@ class Visualizer(ctk.CTk):
             anno.polygon_points_img_coor = [[(x, y) for y, x in c] for c in contours]
             anno.multiple_polygons = True
             self.draw_polygon_on_canvas()
+
+            # If in bucket fill mode and double clicked
+            if anno.annotation_mode == 'bucket_fill' and self.double_click_flag:
+                self.bucket_fill_polygon_area(event)
+                self.double_click_flag = False
 
     def on_mouse_move(self, event):
         view = self.app_state.view
@@ -1296,7 +1327,7 @@ class Visualizer(ctk.CTk):
         return 1
 
     def close_annotation_panel(self):
-        scene = self.app_state.scene
+        anno = self.app_state.anno
         if self.annotation_panel.unsaved_changes:
             result = messagebox.askyesnocancel("Unsaved Changes", "Your 'Custom Annotation is unsaved'. Do you want to save before exiting?")
             if result is None:
@@ -1310,6 +1341,9 @@ class Visualizer(ctk.CTk):
             self.clear_local_seg()
         self.annotation_panel.unsaved_changes = False
         self.annotation_window.withdraw()
+        anno.annotation_mode = None
+        self.exit_bucket_fill(None)
+        self.canvas.config(cursor="")
 
         return 1
 
@@ -1377,20 +1411,23 @@ class Visualizer(ctk.CTk):
 
             self.selected_polygon.append(self.draw_single_polygon_on_canvas(polygon_points))
 
+        if self.canvas.find_withtag("polygon") and not self.app_state.overlay.show_overlay:
+                self.canvas.itemconfig("polygon", state="hidden")
+
     def draw_single_polygon_on_canvas(self, polygon_points):
         if len(polygon_points) == 1:
             x, y = polygon_points[0]
             r = 3  # radius for the point
             selected_polygon = self.canvas.create_oval(
-                x - r, y - r, x + r, y + r, fill='yellow', outline='yellow'
+                x - r, y - r, x + r, y + r, fill='yellow', outline='yellow', tags=("polygon",)
             )
         elif len(polygon_points) == 2:
             selected_polygon = self.canvas.create_line(
-                *polygon_points, fill='yellow', width=2
+                *polygon_points, fill='yellow', width=2, tags=("polygon",)
             )
         elif len(polygon_points) >= 3:
             selected_polygon = self.canvas.create_polygon(
-                polygon_points, outline='yellow', width=2, fill=''
+                polygon_points, outline='yellow', width=2, fill='', tags=("polygon",)
             )
 
         return selected_polygon
@@ -1457,7 +1494,6 @@ class Visualizer(ctk.CTk):
         
         # Check if this area is already annotated with the selected class.
         if (scene.predictions[scene.active_source][anno.selected_polygon_area_idx] == class_color).all():
-            self.reset_annotation()
             return
         
         key = "Custom_Annotation"
@@ -1502,9 +1538,9 @@ class Visualizer(ctk.CTk):
                                                                                     img_x_min: img_x_max]))
 
         self.refresh_view()
+        if anno.polygon_points_img_coor: 
+                self.draw_polygon_on_canvas()
 
-        # Reset variables
-        self.reset_annotation()
 
     def check_existing_annotation(self):
         scene = self.app_state.scene
@@ -1524,10 +1560,14 @@ class Visualizer(ctk.CTk):
             self.refresh_view()
         return 1
 
-    def label_water(self):
+    def label_water(self, bucket_fill=False):
+        if not bucket_fill:
+            self.exit_bucket_fill(None)
         self.annotate_class([0, 255, 255])
 
-    def label_ice(self):
+    def label_ice(self, bucket_fill=False):
+        if not bucket_fill:
+            self.exit_bucket_fill(None)
         self.annotate_class([255, 130, 0])
 
     def label_shoal(self):
@@ -1541,6 +1581,38 @@ class Visualizer(ctk.CTk):
 
     def label_unknown(self):
         self.annotate_class([150, 150, 150])
+
+    def bucket_fill(self, event, label):
+        anno = self.app_state.anno
+        anno.annotation_mode = 'bucket_fill'
+        anno.active_label = label
+        self.canvas.config(cursor="spraycan")
+        
+        if label == "water":
+            self.annotation_panel.water_btn.configure(**self.annotation_panel.label_btn_active_style)
+            self.annotation_panel.ice_btn.configure(**self.annotation_panel.label_btn_default_style)
+        elif label == "ice":
+            self.annotation_panel.ice_btn.configure(**self.annotation_panel.label_btn_active_style)
+            self.annotation_panel.water_btn.configure(**self.annotation_panel.label_btn_default_style)
+        
+        self.focus_set()
+
+    def bucket_fill_polygon_area(self, event):
+        anno = self.app_state.anno
+        if anno.active_label is None:
+            return
+        elif anno.active_label == "water":
+            self.label_water(bucket_fill=True)
+        elif anno.active_label == "ice":
+            self.label_ice(bucket_fill=True)
+
+    def exit_bucket_fill(self, event):
+        anno = self.app_state.anno
+        anno.annotation_mode = None
+        anno.active_label = None
+        self.canvas.config(cursor="")
+        self.annotation_panel.water_btn.configure(**self.annotation_panel.label_btn_default_style)
+        self.annotation_panel.ice_btn.configure(**self.annotation_panel.label_btn_default_style)
 
     # Change this function name later
     def select_area_local_segmentation(self):
