@@ -168,3 +168,4 @@ class Minimap(ctk.CTkFrame):
             self.canvas.itemconfig("annotated_area", state="normal")
         else:
             self.canvas.itemconfig("annotated_area", state="hidden")
+            

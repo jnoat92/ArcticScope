@@ -85,7 +85,7 @@ class Visualizer(ctk.CTk):
         self.canvas.bind("<Double-Button-1>", self.on_double_click_set_flag)
         self.canvas.bind("<Motion>", self.on_mouse_move)
 
-        self.bind("<Escape>", self.exit_bucket_fill)
+        self.bind("<Escape>", self.on_escape_key)
 
         self.double_click_flag = False
 
@@ -463,8 +463,13 @@ class Visualizer(ctk.CTk):
     # Display handle
 
     def set_overlay(self):
-        self.overlay = compose_overlay(self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, 
-                                self.local_boundmask_resized, self.app_state.overlay.alpha)
+        if self.app_state.overlay.show_local_segmentation:
+            # Hide global boundary mask if local segmentation is on
+            self.overlay = compose_overlay(self.pred_resized, self.img_resized, None, self.landmask_resized, 
+                                    self.local_boundmask_resized, self.app_state.overlay.alpha)
+        else:
+            self.overlay = compose_overlay(self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, 
+                                    self.local_boundmask_resized, self.app_state.overlay.alpha)
 
     def choose_image(self):
         scene = self.app_state.scene
@@ -1074,6 +1079,8 @@ class Visualizer(ctk.CTk):
         anno = self.app_state.anno
         if anno.annotation_mode == 'bucket_fill':
             self.canvas.config(cursor="spraycan")
+        elif anno.annotation_mode == 'polygon':
+            self.canvas.config(cursor="crosshair")
         else:
             self.canvas.config(cursor="")
 
@@ -1282,6 +1289,16 @@ class Visualizer(ctk.CTk):
                 lon_dms = self.decimal_to_dms(lon, is_latitude=False)
                 self.status_bar.configure(text=f"Lat: {lat:.4f}, Lon: {lon:.4f}\n{lat_dms} {lon_dms}")
 
+    def on_escape_key(self, event):
+        anno = self.app_state.anno
+        if self.annotation_window.winfo_viewable():
+            if anno.annotation_mode == 'bucket_fill':
+                self.exit_bucket_fill(event)
+            else:
+                self.reset_annotation()
+                anno.active_label = None
+                anno.annotation_mode = None
+                self.canvas.config(cursor="")
 
     # Operations
     
@@ -1311,6 +1328,9 @@ class Visualizer(ctk.CTk):
             self.annotation_panel.insert_existing_notes(self.app_state.anno.annotation_notes)
             self.annotation_window.deiconify()
             self.annotation_window.focus_force()
+
+        for btn in self.lbl_source_btn.values():
+            btn.configure(state=ctk.DISABLED) # Disable label source selection when annotation panel is open
 
     def close_evaluation_panel(self):
         if self.evaluation_panel.unsaved_changes:
@@ -1344,6 +1364,8 @@ class Visualizer(ctk.CTk):
         anno.annotation_mode = None
         self.exit_bucket_fill(None)
         self.canvas.config(cursor="")
+        for btn in self.lbl_source_btn.values():
+            btn.configure(state=ctk.NORMAL) # Re-enable label source buttons when annotation panel is closed
 
         return 1
 
@@ -1526,6 +1548,7 @@ class Visualizer(ctk.CTk):
         # Show annotated area on minimap (excluding land and invalid areas)
         valid_polygon_idx = tuple(zip(*[(y, x) for y, x in zip(*anno.selected_polygon_area_idx) if not scene.land_nan_masks[scene.active_source][y, x]]))
 
+        # Showing polygon area on minimap, need to change to do a compare with the exisiting prediction and create a mask of the changed area to show on the minimap
         self.minimap.show_annotated_area(valid_polygon_idx)
 
         img_y_min, img_y_max, img_x_min, img_x_max = anno.selected_polygon_window
