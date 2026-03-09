@@ -348,7 +348,7 @@ class Visualizer(ctk.CTk):
         self.show_prev_anno_switch = ctk.CTkSwitch(
             self.operation_frame,
             text="Show Annotations on Minimap",
-            command=self.minimap.toggle_show_prev_anno
+            command=self.toggle_show_anno_on_minimap
         )
         self.show_prev_anno_switch.select()  # Default to showing previous annotations
         self.show_prev_anno_switch.grid(row=2, column=0, padx=5, pady=5, sticky="w")
@@ -418,7 +418,7 @@ class Visualizer(ctk.CTk):
         model_path = os.path.join(model_folder, model_path) if model_path else None
         variables = run_pred_model(scene.lbl_sources[0], scene.rcm_200m_data, scene.base_land_mask, 
                                                                   model_path=model_path, device='cpu')
-        existing_anno, anno.annotation_notes, self.stored_area_idx = load_existing_annotation(scene.scene_name)
+        existing_anno, anno.annotation_notes = load_existing_annotation(scene.scene_name)
 
         if existing_anno is not None:
             variables.append(existing_anno)
@@ -455,10 +455,12 @@ class Visualizer(ctk.CTk):
                 scene.active_source = custom_anno
                 self.mode_var_lbl_source.set(custom_anno)
 
-        # Show made annotations on minimap
-        if self.stored_area_idx is not None:
-            self.minimap.stored_area_idx = self.stored_area_idx
-            self.minimap.show_annotated_area(np.where(self.stored_area_idx))
+            self.choose_image() # Refresh image to show annotation on minimap
+
+        # # Show made annotations on minimap
+        # if self.stored_area_idx is not None:
+        #     self.minimap.stored_area_idx = self.stored_area_idx
+        #     self.minimap.show_annotated_area(np.where(self.stored_area_idx))
 
     # Display handle
 
@@ -475,8 +477,13 @@ class Visualizer(ctk.CTk):
         scene = self.app_state.scene
         display = self.app_state.display
         scene.img = self.img_[display.channel_mode]
+        custom_anno = "Custom_Annotation"
 
-        self.minimap.set_image(scene.img)
+        if custom_anno in scene.lbl_sources and self.show_prev_anno_switch.get():
+            changed_area_mask = scene.predictions[custom_anno][:,:,0] != scene.predictions[scene.lbl_sources[0]][:,:,0]
+            self.minimap.show_changed_area(scene.img, changed_area_mask)
+        else:
+            self.minimap.set_image(scene.img)
 
     def display_image(self):
         image = self.overlay if self.app_state.overlay.show_overlay else self.img_resized.astype('uint8')
@@ -999,7 +1006,7 @@ class Visualizer(ctk.CTk):
             self.draw_polygon_on_canvas()
 
     def _on_left_click_await(self, event):
-        self.after(200, lambda: self.choose_click_event(event))
+        self.after(180, lambda: self.choose_click_event(event))
 
     def choose_click_event(self, event):
         if self.double_click_flag:
@@ -1545,11 +1552,13 @@ class Visualizer(ctk.CTk):
         scene.predictions[scene.active_source][anno.selected_polygon_area_idx] = class_color
         scene.predictions[scene.active_source][scene.land_nan_masks[scene.active_source]] = [255, 255, 255]
 
-        # Show annotated area on minimap (excluding land and invalid areas)
-        valid_polygon_idx = tuple(zip(*[(y, x) for y, x in zip(*anno.selected_polygon_area_idx) if not scene.land_nan_masks[scene.active_source][y, x]]))
+        # # Show annotated area on minimap (excluding land and invalid areas)
+        # valid_polygon_idx = tuple(zip(*[(y, x) for y, x in zip(*anno.selected_polygon_area_idx) if not scene.land_nan_masks[scene.active_source][y, x]]))
 
-        # Showing polygon area on minimap, need to change to do a compare with the exisiting prediction and create a mask of the changed area to show on the minimap
-        self.minimap.show_annotated_area(valid_polygon_idx)
+        # Do a vectorized compare of the existing prediction (only 1 so [0]) with the new prediction to get a mask of the changed area
+        if self.show_prev_anno_switch.get():
+            changed_area_mask = scene.predictions[scene.active_source][:,:,0] != scene.predictions[scene.lbl_sources[0]][:,:,0]
+            self.minimap.show_changed_area(scene.img, changed_area_mask)
 
         img_y_min, img_y_max, img_x_min, img_x_max = anno.selected_polygon_window
         img_y_min = max(0, img_y_min-20)
@@ -1582,14 +1591,26 @@ class Visualizer(ctk.CTk):
             self.mode_var_lbl_source.set(key)
             self.refresh_view()
         return 1
+    
+    def toggle_show_anno_on_minimap(self):
+        scene = self.app_state.scene
+        custom_anno = "Custom_Annotation"
+
+        if custom_anno in scene.lbl_sources and self.show_prev_anno_switch.get():
+            changed_area_mask = scene.predictions[custom_anno][:,:,0] != scene.predictions[scene.lbl_sources[0]][:,:,0]
+            self.minimap.show_changed_area(scene.img, changed_area_mask)
+        else:
+            self.minimap.set_image(scene.img)
+
 
     def label_water(self, bucket_fill=False):
-        if not bucket_fill:
+        # Check if called by left click or bucket fill
+        if not bucket_fill and self.app_state.anno.annotation_mode == 'bucket_fill':
             self.exit_bucket_fill(None)
         self.annotate_class([0, 255, 255])
 
     def label_ice(self, bucket_fill=False):
-        if not bucket_fill:
+        if not bucket_fill and self.app_state.anno.annotation_mode == 'bucket_fill':
             self.exit_bucket_fill(None)
         self.annotate_class([255, 130, 0])
 
@@ -1602,7 +1623,9 @@ class Visualizer(ctk.CTk):
     def label_iceberg(self):
         self.annotate_class([255, 0, 255])
 
-    def label_unknown(self):
+    def label_unknown(self, bucket_fill=False):
+        if not bucket_fill and self.app_state.anno.annotation_mode == 'bucket_fill':
+            self.exit_bucket_fill(None)
         self.annotate_class([150, 150, 150])
 
     def bucket_fill(self, event, label):
@@ -1611,12 +1634,19 @@ class Visualizer(ctk.CTk):
         anno.active_label = label
         self.canvas.config(cursor="spraycan")
         
+        # Should clean this up later
         if label == "water":
             self.annotation_panel.water_btn.configure(**self.annotation_panel.label_btn_active_style)
             self.annotation_panel.ice_btn.configure(**self.annotation_panel.label_btn_default_style)
+            self.annotation_panel.unknown_btn.configure(**self.annotation_panel.label_btn_default_style)
         elif label == "ice":
             self.annotation_panel.ice_btn.configure(**self.annotation_panel.label_btn_active_style)
             self.annotation_panel.water_btn.configure(**self.annotation_panel.label_btn_default_style)
+            self.annotation_panel.unknown_btn.configure(**self.annotation_panel.label_btn_default_style)
+        elif label == "unknown":
+            self.annotation_panel.unknown_btn.configure(**self.annotation_panel.label_btn_active_style)
+            self.annotation_panel.water_btn.configure(**self.annotation_panel.label_btn_default_style)
+            self.annotation_panel.ice_btn.configure(**self.annotation_panel.label_btn_default_style)
         
         self.focus_set()
 
@@ -1628,6 +1658,8 @@ class Visualizer(ctk.CTk):
             self.label_water(bucket_fill=True)
         elif anno.active_label == "ice":
             self.label_ice(bucket_fill=True)
+        elif anno.active_label == "unknown":
+            self.label_unknown(bucket_fill=True)
 
     def exit_bucket_fill(self, event):
         anno = self.app_state.anno
@@ -1636,7 +1668,7 @@ class Visualizer(ctk.CTk):
         self.canvas.config(cursor="")
         self.annotation_panel.water_btn.configure(**self.annotation_panel.label_btn_default_style)
         self.annotation_panel.ice_btn.configure(**self.annotation_panel.label_btn_default_style)
-
+        self.annotation_panel.unknown_btn.configure(**self.annotation_panel.label_btn_default_style)
     # Change this function name later
     def select_area_local_segmentation(self):
         overlay = self.app_state.overlay

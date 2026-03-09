@@ -48,10 +48,14 @@ class AnnotationPanel(ctk.CTkFrame):
         self.water_btn = ctk.CTkButton(self.labels_frame, text="water", width=20, fg_color="#3fbfbf", text_color="#000000",
                       command=command_parent.label_water)
         self.water_btn.grid(row=1, column=1, padx=5, pady=5)
+        self.unknown_btn = ctk.CTkButton(self.labels_frame, text="unknown", width=20, fg_color="#969696", text_color="#000000",
+                      command=command_parent.label_unknown)
+        self.unknown_btn.grid(row=1, column=2, padx=5, pady=5)
 
         self.ice_btn.bind("<Button-3>", lambda e: command_parent.bucket_fill(e, "ice"))
         self.water_btn.bind("<Button-3>", lambda e: command_parent.bucket_fill(e, "water"))
-        
+        self.unknown_btn.bind("<Button-3>", lambda e: command_parent.bucket_fill(e, "unknown"))
+
         self.label_btn_default_style = {     # store default style
             "text_color": self.ice_btn.cget("text_color"),
             "font": self.ice_btn.cget("font")
@@ -62,12 +66,11 @@ class AnnotationPanel(ctk.CTkFrame):
         }
 
         # Other options dropdown
-        self.other_options_list = ["shoal", "ship", "iceberg", "unknown"]
+        self.other_options_list = ["shoal", "ship", "iceberg"]
         self.other_options_color = {
             "shoal": "#00ff00",
             "ship": "#ffff00",
-            "iceberg": "#ff00ff",
-            "unknown": "#969696"
+            "iceberg": "#ff00ff"
         }
         self.other_options_var = ctk.StringVar(value="Other")
         self.other_options_menu = ctk.CTkOptionMenu(self.labels_frame, values=self.other_options_list, 
@@ -75,9 +78,9 @@ class AnnotationPanel(ctk.CTkFrame):
                                                     fg_color="#A5A5A5", button_color="#A5A5A5",
                                                     dropdown_fg_color="#A5A5A5", text_color="#000000",
                                                     width=40, corner_radius=10)
-        self.other_options_menu.grid(row=1, column=2, padx=5, pady=5)
+        self.other_options_menu.grid(row=1, column=3, padx=5, pady=5)
         ctk.CTkButton(self.labels_frame, text="reset from", 
-                      width=20, command=self.reset_label_from).grid(row=1, column=3, padx=5, pady=5)
+                      width=20, command=self.reset_label_from).grid(row=1, column=4, padx=5, pady=5)
         
         # Local segmentation frame
         self.local_seg_frame = ctk.CTkFrame(self)
@@ -317,8 +320,8 @@ class AnnotationPanel(ctk.CTkFrame):
             self.command_parent.lbl_source_btn[main_key].configure(text=f"* {main_key}")
             self.unsaved_changes = True
             #self.save_button.configure(state=ctk.NORMAL)
-
-            self.command_parent.minimap.clear_selected_annotated_area(anno.selected_polygon_area_idx)
+            changed_area_mask = scene.predictions[scene.active_source][:,:,0] != scene.predictions[scene.lbl_sources[0]][:,:,0]
+            self.command_parent.minimap.show_changed_area(scene.img, changed_area_mask)
         else:
             # Whole area reset
             scene.predictions[scene.active_source] = scene.predictions[key].copy()
@@ -332,7 +335,7 @@ class AnnotationPanel(ctk.CTkFrame):
             self.command_parent.lbl_source_btn[scene.active_source].configure(text=f"* {scene.active_source}")
             self.unsaved_changes = True
             #self.save_button.configure(state=ctk.NORMAL)
-            self.command_parent.minimap.delete_annotated_areas()
+            self.command_parent.minimap.set_image(scene.img)
 
     def save_annotation(self):
         scene = self.app_state.scene
@@ -382,8 +385,11 @@ class AnnotationPanel(ctk.CTkFrame):
         anno.annotation_notes = notes
 
         annotated_area_file_folder = os.path.split(file_path)[0]
-        annotated_area_file_path = os.path.join(annotated_area_file_folder, "annotated_area.npz")
-        self.command_parent.minimap.save_annotated_area(annotated_area_file_path)
+        changed_area_mask = scene.predictions[scene.active_source][:,:,0] != scene.predictions[scene.lbl_sources[0]][:,:,0]
+        changed_area_img = img.copy()
+        changed_area_img[changed_area_mask] = [255, 255, 255]
+        annotated_area_file_path = os.path.join(annotated_area_file_folder, "changed_area.png")
+        Image.fromarray(changed_area_img).save(annotated_area_file_path)
 
         # mark as saved
         self.command_parent.lbl_source_btn[key].configure(text=key)

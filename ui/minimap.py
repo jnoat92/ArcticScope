@@ -23,10 +23,14 @@ class Minimap(ctk.CTkFrame):
 
         self.show_prev_anno = True # Flag to control whether to show previous annotations on minimap
 
-    def set_image(self, img):
+    def resize_image(self, img):
         pil_img = Image.fromarray(img.astype('uint8'))
         pil_img.thumbnail((self.w, self.h), Image.Resampling.LANCZOS) # high-quality downsampling to fit image into minimap
+        return pil_img
 
+    def set_image(self, img):
+        pil_img = self.resize_image(img)
+        
         # Store original and minimap dimensions
         self.mini_img_w, self.mini_img_h = pil_img.size
         self.full_img_w, self.full_img_h = img.shape[1], img.shape[0]
@@ -35,8 +39,13 @@ class Minimap(ctk.CTkFrame):
             self.stored_area_idx = np.zeros((self.full_img_h + 1, self.full_img_w + 1), dtype=np.uint8)
 
         minimap_img = ImageTk.PhotoImage(pil_img)
-        self.tk_img_ref = minimap_img  # keep reference
-        
+
+        # Keep a reference to the image without annotated areas
+        self.tk_img_ref = minimap_img
+
+        self.display_image(minimap_img)
+
+    def display_image(self, minimap_img):
         if self.img_item is None:
             self.img_item = self.canvas.create_image(self.w // 2, self.h // 2, image=minimap_img, anchor="center")
         else:
@@ -69,7 +78,8 @@ class Minimap(ctk.CTkFrame):
                            y1 + offset_y)
         
         # Panning and zooming is slow while minimap annotations are shown, need to find a way to optimize this
-        
+        # It is most likely due to the large number of items on the canvas, so instead we can just update the image
+
         #self.canvas.tag_raise(self.viewport_item)
 
     def get_viewport_coords(self, image, zoom_factor, offset_x, offset_y, canvas_width, canvas_height):
@@ -130,6 +140,14 @@ class Minimap(ctk.CTkFrame):
         else:
             self.canvas.itemconfig("annotated_area", state="hidden")
 
+    def show_changed_area(self, img, changed_area_mask, color=[255,255,255]):
+        # Compare with existing minimap image and update only changed areas to white
+        minimap_img = img.copy()
+        minimap_img[changed_area_mask] = [255, 255, 255]
+        self.set_image(minimap_img)
+
+
+
     def clear_selected_annotated_area(self, polygon_area_idx):
         if polygon_area_idx is not None:
             minimap_coord_rows = self.polygon_to_minimap_coords(polygon_area_idx, remove=True)
@@ -168,4 +186,3 @@ class Minimap(ctk.CTkFrame):
             self.canvas.itemconfig("annotated_area", state="normal")
         else:
             self.canvas.itemconfig("annotated_area", state="hidden")
-            
