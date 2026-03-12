@@ -87,6 +87,9 @@ class Visualizer(ctk.CTk):
 
         self.bind("<Escape>", self.on_escape_key)
 
+        self.bind("<Control-z>", self.on_ctrl_z)
+        self.bind("<Control-y>", self.on_ctrl_y)
+
         self.double_click_flag = False
 
 
@@ -465,12 +468,7 @@ class Visualizer(ctk.CTk):
     # Display handle
 
     def set_overlay(self):
-        if self.app_state.overlay.show_local_segmentation:
-            # Hide global boundary mask if local segmentation is on
-            self.overlay = compose_overlay(self.pred_resized, self.img_resized, None, self.landmask_resized, 
-                                    self.local_boundmask_resized, self.app_state.overlay.alpha)
-        else:
-            self.overlay = compose_overlay(self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, 
+        self.overlay = compose_overlay(self.pred_resized, self.img_resized, self.boundmask_resized, self.landmask_resized, 
                                     self.local_boundmask_resized, self.app_state.overlay.alpha)
 
     def choose_image(self):
@@ -1307,6 +1305,27 @@ class Visualizer(ctk.CTk):
                 anno.annotation_mode = None
                 self.canvas.config(cursor="")
 
+    def on_ctrl_z(self, event):
+        anno = self.app_state.anno
+        scene = self.app_state.scene
+        if self.annotation_window.winfo_viewable() and anno.undo_stack:
+            # Pop from undo stack and push to redo stack with current state
+            last_polygon, last_colours, last_window = anno.undo_stack.pop()
+            anno.redo_stack.append((last_polygon, scene.predictions[scene.active_source][last_polygon].copy(), last_window))
+            self.undo_redo_annotation(last_polygon, last_colours, last_window)
+
+            
+
+    def on_ctrl_y(self, event):
+        anno = self.app_state.anno
+        scene = self.app_state.scene
+        if self.annotation_window.winfo_viewable() and anno.redo_stack:
+            # Pop from redo stack and append to undo stack with current state
+            last_polygon, last_colours, last_window = anno.redo_stack.pop()
+            anno.undo_stack.append((last_polygon, scene.predictions[scene.active_source][last_polygon].copy(), last_window))
+            self.undo_redo_annotation(last_polygon, last_colours, last_window)
+
+
     # Operations
     
     def show_evaluation_panel(self):
@@ -1548,6 +1567,10 @@ class Visualizer(ctk.CTk):
         self.annotation_panel.unsaved_changes = True
         self.annotation_panel.save_button.configure(state=ctk.NORMAL)
 
+        # Store in undo stack and clear redo stack
+        anno.undo_stack.append((anno.selected_polygon_area_idx, scene.predictions[scene.active_source][anno.selected_polygon_area_idx].copy(), anno.selected_polygon_window))
+        anno.redo_stack.clear() # Clear redo stack after new annotation
+
         self.mode_var_lbl_source.set(key)   # set custom annotation as current label source
         scene.predictions[scene.active_source][anno.selected_polygon_area_idx] = class_color
         scene.predictions[scene.active_source][scene.land_nan_masks[scene.active_source]] = [255, 255, 255]
@@ -1572,6 +1595,30 @@ class Visualizer(ctk.CTk):
         self.refresh_view()
         if anno.polygon_points_img_coor: 
                 self.draw_polygon_on_canvas()
+
+    def undo_redo_annotation(self, last_polygon_area_idx, last_colours, last_window):
+        scene = self.app_state.scene
+
+        # Change colours in the polygon area back to the last colours
+        scene.predictions[scene.active_source][last_polygon_area_idx] = last_colours
+
+        # Find new boundaries in the affected area
+        img_y_min, img_y_max, img_x_min, img_x_max = last_window
+        img_y_min = max(0, img_y_min-20)
+        img_y_max = min(scene.predictions[scene.active_source].shape[0], img_y_max+20)
+        img_x_min = max(0, img_x_min-20)
+        img_x_max = min(scene.predictions[scene.active_source].shape[1], img_x_max+20)
+        scene.boundmasks[scene.active_source][img_y_min: img_y_max, 
+                    img_x_min: img_x_max] = generate_boundaries(rgb2gray(scene.predictions[scene.active_source][img_y_min: img_y_max, 
+                                                                                    img_x_min: img_x_max]))
+        # Show annotated area on minimap
+        if self.show_prev_anno_switch.get():
+            changed_area_mask = scene.predictions[scene.active_source][:,:,0] != scene.predictions[scene.lbl_sources[0]][:,:,0]
+            self.minimap.show_changed_area(scene.img, changed_area_mask)
+
+        # Reset annotation and refresh view
+        self.reset_annotation()
+        self.refresh_view()
 
 
     def check_existing_annotation(self):

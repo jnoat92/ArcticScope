@@ -150,7 +150,6 @@ class AnnotationPanel(ctk.CTkFrame):
                 else:
                     self.command_parent._finish_polygon()
             else: # Assume they want to reset the whole image
-                #messagebox.showinfo("Error", "Please select a polygon area first.", parent=self.master)
                 anno.selected_polygon_window = (0, scene.img.shape[0], 0, scene.img.shape[1])
 
         # Create new window
@@ -285,9 +284,10 @@ class AnnotationPanel(ctk.CTkFrame):
             messagebox.showinfo("Error", f"Invalid label source {key}.", parent=self.zoom_window)
             return
 
-
         # Update the prediction in the selected area
         if anno.selected_polygon_area_idx:
+            anno.undo_stack.append((anno.selected_polygon_area_idx, scene.predictions[scene.active_source][anno.selected_polygon_area_idx].copy(), anno.selected_polygon_window))
+            
             self.command_parent.mode_var_lbl_source.set("Custom_Annotation")
             main_key = self.command_parent.mode_var_lbl_source.get()
             # if main_key != "Custom_Annotation":
@@ -324,6 +324,10 @@ class AnnotationPanel(ctk.CTkFrame):
             self.command_parent.minimap.show_changed_area(scene.img, changed_area_mask)
         else:
             # Whole area reset
+            if not messagebox.askyesnocancel("Reset whole annotation", "Please note you are about to reset the entire annotation.\n" \
+            "This action cannot be undone.", parent=self.master):
+                return
+            anno.undo_stack.clear() # Clear undo stack as we are replacing the whole thing, no point in undoing back to previous state
             scene.predictions[scene.active_source] = scene.predictions[key].copy()
             scene.land_nan_masks[scene.active_source] = scene.land_nan_masks[key].copy()
             scene.boundmasks[scene.active_source] = scene.boundmasks[key].copy()
@@ -336,6 +340,8 @@ class AnnotationPanel(ctk.CTkFrame):
             self.unsaved_changes = True
             #self.save_button.configure(state=ctk.NORMAL)
             self.command_parent.minimap.set_image(scene.img)
+        
+        anno.redo_stack.clear()
 
     def save_annotation(self):
         scene = self.app_state.scene

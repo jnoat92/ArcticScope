@@ -128,6 +128,10 @@ class AnnotationState:
     zoom_window_open: bool = False
     zoom_bbox_img: tuple[int,int,int,int] = None
 
+    # Undo and redo stacks
+    undo_stack: list[tuple[list[int], list[int], tuple[int, int, int, int]]] = field(default_factory=list) # List of polygon indices and their previous colours
+    redo_stack: list[tuple[list[int], list[int], tuple[int, int, int, int]]] = field(default_factory=list)
+
 @dataclass(slots=True)
 class AppState:
     view: ViewState = field(default_factory=ViewState)
