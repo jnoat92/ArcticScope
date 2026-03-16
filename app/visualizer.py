@@ -958,6 +958,9 @@ class Visualizer(ctk.CTk):
 
         scene = self.app_state.scene
 
+        if scene.img is None:
+            return 0 # No image loaded, ignore label source change
+
         scene.active_source = self.mode_var_lbl_source.get()
         key = scene.active_source
 
@@ -1053,8 +1056,13 @@ class Visualizer(ctk.CTk):
         """Handle mouse drag for zoom selection, panning, or rectangle drawing."""
 
         view = self.app_state.view
+        scene = self.app_state.scene
         anno = self.app_state.anno
         overlay = self.app_state.overlay
+
+        if scene.img is None:
+            return # No image loaded, ignore drag
+
         if view.zoom_select_mode and self.selection_start_coord:
             # Update selection rectangle
             x0, y0 = self.selection_start_coord
