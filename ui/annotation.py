@@ -41,7 +41,7 @@ class AnnotationPanel(ctk.CTkFrame):
         # Labels for annotation
         self.labels_frame = ctk.CTkFrame(self)
         self.labels_frame.grid(row=0, column=1, padx=5, pady=5, sticky="n")
-        ctk.CTkLabel(self.labels_frame, text="Labels").grid(row=0, column=0, columnspan=4, sticky="nsew", pady=5)
+        ctk.CTkLabel(self.labels_frame, text="Labels").grid(row=0, column=0, columnspan=5, sticky="nsew", pady=5)
         self.ice_btn = ctk.CTkButton(self.labels_frame, text="ice", width=20, fg_color="#bf803f", text_color="#000000",
                       command=command_parent.label_ice)
         self.ice_btn.grid(row=1, column=0, padx=5, pady=5)
@@ -81,7 +81,12 @@ class AnnotationPanel(ctk.CTkFrame):
         self.other_options_menu.grid(row=1, column=3, padx=5, pady=5)
         ctk.CTkButton(self.labels_frame, text="reset from", 
                       width=20, command=self.reset_label_from).grid(row=1, column=4, padx=5, pady=5)
-        
+        ctk.CTkButton(self.labels_frame, text="", width=15, image=ctk.CTkImage(Image.open(resource_path("icons/undo.png")), size=(15, 15)),
+                      command=command_parent.on_ctrl_z).grid(row=2, column=0, padx=5, pady=5, columnspan=3, sticky='e')
+        ctk.CTkButton(self.labels_frame, text="", width=15, image=ctk.CTkImage(Image.open(resource_path("icons/redo.png")), size=(15, 15)),
+                      command=command_parent.on_ctrl_y).grid(row=2, column=3, padx=5, pady=5, columnspan=2, sticky='w')
+
+
         # Local segmentation frame
         self.local_seg_frame = ctk.CTkFrame(self)
         self.local_seg_frame.grid(row=0, column=2, padx=5, pady=5, sticky="n")
@@ -286,6 +291,8 @@ class AnnotationPanel(ctk.CTkFrame):
 
         # Update the prediction in the selected area
         if anno.selected_polygon_area_idx:
+            if anno.undo_stack and len(anno.undo_stack) > anno.stack_limit:
+                anno.undo_stack.pop(0)  # Remove oldest entry if stack limit exceeded
             anno.undo_stack.append((anno.selected_polygon_area_idx, scene.predictions[scene.active_source][anno.selected_polygon_area_idx].copy(), anno.selected_polygon_window))
             
             self.command_parent.mode_var_lbl_source.set("Custom_Annotation")

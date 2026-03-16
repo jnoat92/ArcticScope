@@ -89,6 +89,7 @@ class Visualizer(ctk.CTk):
 
         self.bind("<Control-z>", self.on_ctrl_z)
         self.bind("<Control-y>", self.on_ctrl_y)
+        self.bind("<Control-Shift-Z>", self.on_ctrl_y)  # Some systems use Ctrl+Shift+Z for redo
 
         self.double_click_flag = False
 
@@ -516,6 +517,7 @@ class Visualizer(ctk.CTk):
 
         scene = self.app_state.scene
         display = self.app_state.display
+        anno = self.app_state.anno
 
         self.close_evaluation_panel()
         self.close_annotation_panel()
@@ -636,20 +638,24 @@ class Visualizer(ctk.CTk):
             if display.channel_mode in ["(HH, HH, HV)", "(HH, HV, HV)"]:
                 self.HH_HV_switch.configure(state=ctk.DISABLED)
 
+            # Reset annotation stacks
+            anno.undo_stack.clear()
+            anno.redo_stack.clear()
+
+            self.contrast_slider.set(0) # reset to default
+            self.app_state.display.contrast = 0.0
+            self.brightness_slider.set(0) # reset to default
+            self.app_state.display.brightness = 0.0
+
+            self.loading_bar.set(1)
+            self.loading_bar_label.configure(text="Inference complete")
+            self.update_idletasks()
+
+            self.after(3000, self.loading_bar_label.grid_remove) # Hide loading bar after short delay
+            self.after(3000, self.loading_bar.grid_remove) # Hide loading bar after short delay
+
         else:
             scene.folder_path = prev_folder_path
-
-        self.contrast_slider.set(0) # reset to default
-        self.app_state.display.contrast = 0.0
-        self.brightness_slider.set(0) # reset to default
-        self.app_state.display.brightness = 0.0
-
-        self.loading_bar.set(1)
-        self.loading_bar_label.configure(text="Inference complete")
-        self.update_idletasks()
-
-        self.after(3000, self.loading_bar_label.grid_remove) # Hide loading bar after short delay
-        self.after(3000, self.loading_bar.grid_remove) # Hide loading bar after short delay
 
     def color_composite(self):
         display = self.app_state.display
@@ -1305,7 +1311,7 @@ class Visualizer(ctk.CTk):
                 anno.annotation_mode = None
                 self.canvas.config(cursor="")
 
-    def on_ctrl_z(self, event):
+    def on_ctrl_z(self, event=None):
         anno = self.app_state.anno
         scene = self.app_state.scene
         if self.annotation_window.winfo_viewable() and anno.undo_stack:
@@ -1314,9 +1320,8 @@ class Visualizer(ctk.CTk):
             anno.redo_stack.append((last_polygon, scene.predictions[scene.active_source][last_polygon].copy(), last_window))
             self.undo_redo_annotation(last_polygon, last_colours, last_window)
 
-            
 
-    def on_ctrl_y(self, event):
+    def on_ctrl_y(self, event=None):
         anno = self.app_state.anno
         scene = self.app_state.scene
         if self.annotation_window.winfo_viewable() and anno.redo_stack:
@@ -1568,6 +1573,8 @@ class Visualizer(ctk.CTk):
         self.annotation_panel.save_button.configure(state=ctk.NORMAL)
 
         # Store in undo stack and clear redo stack
+        if anno.undo_stack and len(anno.undo_stack) > anno.stack_limit:
+            anno.undo_stack.pop(0)  # Remove oldest entry if stack limit exceeded
         anno.undo_stack.append((anno.selected_polygon_area_idx, scene.predictions[scene.active_source][anno.selected_polygon_area_idx].copy(), anno.selected_polygon_window))
         anno.redo_stack.clear() # Clear redo stack after new annotation
 

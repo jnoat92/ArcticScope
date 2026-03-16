@@ -131,6 +131,7 @@ class AnnotationState:
     # Undo and redo stacks
     undo_stack: list[tuple[list[int], list[int], tuple[int, int, int, int]]] = field(default_factory=list) # List of polygon indices and their previous colours
     redo_stack: list[tuple[list[int], list[int], tuple[int, int, int, int]]] = field(default_factory=list)
+    stack_limit: int = 25 # Limit for undo/redo stack size
 
 @dataclass(slots=True)
 class AppState:
