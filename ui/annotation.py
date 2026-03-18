@@ -405,10 +405,9 @@ class AnnotationPanel(ctk.CTkFrame):
 
         annotated_area_file_folder = os.path.split(file_path)[0]
         changed_area_mask = scene.predictions[scene.active_source][:,:,0] != scene.predictions[scene.lbl_sources[0]][:,:,0]
-        changed_area_img = img.copy()
-        changed_area_img[changed_area_mask] = [255, 255, 255]
         annotated_area_file_path = os.path.join(annotated_area_file_folder, "changed_area.png")
-        Image.fromarray(changed_area_img).save(annotated_area_file_path)
+        # Save the changed area mask as an single channel image
+        Image.fromarray(changed_area_mask).save(annotated_area_file_path)
 
         # mark as saved
         self.command_parent.lbl_source_btn[key].configure(text=key)
