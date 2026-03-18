@@ -1,7 +1,7 @@
 '''
 Annotation panel setup and functions
 
-Last modified: Jan 2026
+Last modified: Mar 2026
 '''
 
 from email.mime import text
@@ -92,7 +92,7 @@ class AnnotationPanel(ctk.CTkFrame):
         self.local_seg_frame.grid(row=0, column=2, padx=5, pady=5, sticky="n")
         ctk.CTkLabel(self.local_seg_frame, text="Local Segmentation").grid(row=0, column=0, columnspan=3, sticky="nsew", pady=5)
         self.local_segmentation_btn = ctk.CTkButton(self.local_seg_frame, text="Select Area", 
-                      width=20, command=self.command_parent.select_area_local_segmentation).grid(row=1, column=0, padx=5, pady=5)
+                      width=20, command=self.command_parent.select_area_local_seg).grid(row=1, column=0, padx=5, pady=5)
         self.local_seg_switch = ctk.CTkSwitch(
             self.local_seg_frame,
             text="HH-HV",
@@ -351,6 +351,12 @@ class AnnotationPanel(ctk.CTkFrame):
         anno.redo_stack.clear()
 
     def save_annotation(self):
+        """
+        Save the current annotation and notes to disk, and mark as saved.
+         - Saves the annotation as an image file (.png)
+         - Saves the notes in a JSON file with timestamp
+         - Also saves a mask of the changed area compared to the original prediction for reference (.png)
+        """
         scene = self.app_state.scene
         anno = self.app_state.anno
 
