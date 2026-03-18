@@ -639,7 +639,6 @@ class Visualizer(ctk.CTk):
                 scene.filenames.pop()
                 scene.lbl_sources.pop()
 
-            self.minimap.delete_annotated_areas()
             self.choose_image()
 
             self.loading_bar.set(0.6)

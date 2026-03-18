@@ -1,3 +1,9 @@
+"""
+Utility functions for image processing and visualization.
+
+Last modified: Mar 2026
+"""
+
 from numba import njit, prange, cuda
 import numpy as np
 from numba.typed import List
@@ -6,6 +12,7 @@ from skimage.measure import find_contours
 
 @cuda.jit
 def blend_overlay_cuda(pred, img, boundmask, landmask, alpha, out):
+    """Blend the prediction and image using GPU acceleration with Numba's CUDA."""
     y, x = cuda.grid(2)
     h, w = pred.shape[:2]
     beta = 1 - alpha
@@ -23,6 +30,7 @@ def blend_overlay_cuda(pred, img, boundmask, landmask, alpha, out):
 
 @njit(parallel=True)
 def blend_overlay(pred, img, boundmask, landmask, local_boundmask, alpha):
+    """Blend the prediction and image using CPU with Numba for parallelization."""
     h, w, c = pred.shape
     out = np.empty((h, w, c), dtype=np.float32)
 
@@ -45,10 +53,12 @@ def blend_overlay(pred, img, boundmask, landmask, local_boundmask, alpha):
     return out
 
 def rgb2gray(rgb):
+    """Convert an RGB image to grayscale using standard luminosity method."""
     return np.dot(rgb[...,:3], [0.2989, 0.5870, 0.1140])
 
 # Optimize this
 def generate_boundaries(lbl):
+    """Generate a boolean mask of boundary pixels from a labeled segmentation image."""
     boundmask = np.zeros_like(lbl, dtype=bool)   
     for lvl in np.unique(lbl):
         level_ctrs = find_contours(lbl, level=lvl)
@@ -64,7 +74,7 @@ def generate_boundaries(lbl):
 
 @njit(parallel=True)
 def apply_brightness(image, nan_mask, brightness=0.0, clip=True):
-    # Adjust brightness
+    """Apply brightness adjustment to the image while preserving NaN areas defined by nan_mask."""
     h, w, c = image.shape
     adjusted = np.empty((h, w, c), dtype=np.float32)
 
@@ -88,6 +98,7 @@ def apply_brightness(image, nan_mask, brightness=0.0, clip=True):
     return adjusted.astype(np.uint8)
 
 def ds_to_src_pixel(row_ds, col_ds, src_h, src_w, dst_h, dst_w):
+    """Convert pixel coordinates from the downsampled image to the original image using bilinear scaling."""
     x_scale = src_w / dst_w
     y_scale = src_h / dst_h
     col_src = (col_ds + 0.5) * x_scale
@@ -95,6 +106,7 @@ def ds_to_src_pixel(row_ds, col_ds, src_h, src_w, dst_h, dst_w):
     return row_src, col_src
 
 def tiepoints_1d_to_grid(tie_lines, tie_pixels, tie_lats, tie_lons):
+    """Convert 1D arrays of tie points into 2D grids for latitude and longitude."""
     tie_lines  = np.asarray(tie_lines,  dtype=float)
     tie_pixels = np.asarray(tie_pixels, dtype=float)
     tie_lats   = np.asarray(tie_lats,   dtype=float)
@@ -122,6 +134,10 @@ def tiepoints_1d_to_grid(tie_lines, tie_pixels, tie_lats, tie_lons):
     return rows, cols, lat_grid, lon_grid
 
 def make_pix2ll(rows, cols, lat_grid, lon_grid):
+    """
+    Create a function that maps pixel coordinates (row, col) to latitude and longitude 
+    using bilinear interpolation on the provided tie point grid.
+    """
     rows = np.asarray(rows, float)
     cols = np.asarray(cols, float)
     lat_grid = np.asarray(lat_grid, float)
@@ -159,10 +175,10 @@ def make_pix2ll(rows, cols, lat_grid, lon_grid):
 
 @njit(cache=True)
 def erase_edge_touching_polygons_numba(polygons, background=-1):
-    '''
+    """
     Perform a flood_fill from the edges to find all polygons that touch the edge
     Set all edge-touching polygons to background value
-    '''
+    """
 
     rows, cols = polygons.shape
     if rows == 0 or cols == 0:

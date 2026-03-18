@@ -1,7 +1,7 @@
 '''
 Segmentation related functions
 
-Last modified: Feb 2026
+Last modified: Mar 2026
 '''
 
 import numpy as np
@@ -12,6 +12,7 @@ from magic_py.magic_rag import magic_rag
 from core.utils import erase_edge_touching_polygons_numba
 
 def get_segment_contours(pred, x, y):
+    """Get contours for a specific segment in the prediction image."""
     target_rgb = pred[x, y]
     mask = np.all(pred == target_rgb, axis=-1)
     labeled = label(mask, connectivity=2)
@@ -91,10 +92,10 @@ def one_pixel_boundaries(polygons, background=None):
     return boundaries
 
 def remove_edge_touching_polygons(irgs_output):
-    '''   
+    """   
     Get only the enclosed polygons that don't touch the edges of the selected area
     Set the polygons touching the edges to -1
-    '''
+    """
     # Using numba-optimized version instead of pure Python for performance
     polygons = np.array(irgs_output, dtype=np.int32)  # ensure numpy
     erase_edge_touching_polygons_numba(polygons, background=-1)
