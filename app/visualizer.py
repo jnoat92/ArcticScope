@@ -1076,7 +1076,13 @@ class Visualizer(ctk.CTk):
 
     def _on_left_click_await(self, event):
         """Handle left mouse click with differentiation between single and double clicks."""
-        self.after(180, lambda: self.choose_click_event(event))
+        anno = self.app_state.anno
+        view = self.app_state.view
+        if view.zoom_select_mode or anno.annotation_mode in ['rectangle', 'polygon'] \
+            or self.app_state.overlay.select_local_segmentation:
+            self._on_left_click(event)
+        else:
+            self.after(180, lambda: self.choose_click_event(event))
 
     def choose_click_event(self, event):
         """Determine whether the click was a single or double click and call the appropriate handler."""

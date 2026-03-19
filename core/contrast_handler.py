@@ -106,6 +106,7 @@ def enhance_outlier_slider(
 
     out3 = np.empty_like(img3)
 
+    # Compute quantiles and LUTs per channel, then apply LUT to the image
     for c in range(C):
         n = int(n_valid[c]) if np.ndim(n_valid) > 0 else int(n_valid)
         l = quantile_from_hist_linear(hist[c], n, bth)
