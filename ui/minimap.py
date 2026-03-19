@@ -1,3 +1,9 @@
+'''
+Minimap panel setup and functions
+
+Last modified: Mar 2026
+'''
+
 import tkinter as tk
 import customtkinter as ctk
 from PIL import Image, ImageTk
@@ -15,26 +21,40 @@ class Minimap(ctk.CTkFrame):
 
         self.tk_img_ref = None
         self.img_item = None
-        self.viewport_item = self.canvas.create_rectangle(0, 0, 0, 0, outline="white", width=2)
+        self.viewport_item = self.canvas.create_rectangle(0, 0, 0, 0, outline="yellow", width=2)
 
         self.stored_area_idx = None # Store annotated area indices for saving
         self.full_img_w = None # Placeholder until image is set
         self.full_img_h = None # Placeholder until image is set
 
-    def set_image(self, img):
+        self.show_prev_anno = True # Flag to control whether to show previous annotations on minimap
+
+    def resize_image(self, img):
+        """Resize the input image to fit within the minimap dimensions while maintaining aspect ratio."""
         pil_img = Image.fromarray(img.astype('uint8'))
         pil_img.thumbnail((self.w, self.h), Image.Resampling.LANCZOS) # high-quality downsampling to fit image into minimap
+        return pil_img
 
+    def set_image(self, img):
+        """Set the image to be displayed on the minimap, resizing it to fit while maintaining aspect ratio."""
+        pil_img = self.resize_image(img)
+        
         # Store original and minimap dimensions
         self.mini_img_w, self.mini_img_h = pil_img.size
         self.full_img_w, self.full_img_h = img.shape[1], img.shape[0]
 
         if self.stored_area_idx is None:
-            self.stored_area_idx = np.zeros((self.full_img_h, self.full_img_w), dtype=np.uint8)
+            self.stored_area_idx = np.zeros((self.full_img_h + 1, self.full_img_w + 1), dtype=np.uint8)
 
         minimap_img = ImageTk.PhotoImage(pil_img)
-        self.tk_img_ref = minimap_img  # keep reference
-        
+
+        # Keep a reference to the image without annotated areas
+        self.tk_img_ref = minimap_img
+
+        self.display_image(minimap_img)
+
+    def display_image(self, minimap_img):
+        """Display the given minimap image on the canvas."""
         if self.img_item is None:
             self.img_item = self.canvas.create_image(self.w // 2, self.h // 2, image=minimap_img, anchor="center")
         else:
@@ -43,6 +63,7 @@ class Minimap(ctk.CTkFrame):
         self.canvas.tag_raise(self.viewport_item)  # Ensure viewport rectangle is on top
 
     def set_viewport_rect(self, image, zoom_factor, offset_x, offset_y, canvas_width, canvas_height):
+        """Calculate and update the viewport rectangle on the minimap based on the current view of the main image."""
         view_top, view_bottom, view_left, view_right = self.get_viewport_coords(
             image, zoom_factor, offset_x, offset_y, canvas_width, canvas_height)
 
@@ -65,10 +86,10 @@ class Minimap(ctk.CTkFrame):
                            y0 + offset_y, 
                            x1 + offset_x, 
                            y1 + offset_y)
-        
-        self.canvas.tag_raise(self.viewport_item)
+
 
     def get_viewport_coords(self, image, zoom_factor, offset_x, offset_y, canvas_width, canvas_height):
+        """Calculate the coordinates of the viewport rectangle on the original image based on the current zoom and pan state."""
         h, w = image.shape[:2]
         
         # Image coordinates of the viewport
@@ -84,81 +105,10 @@ class Minimap(ctk.CTkFrame):
         view_right = max(0, min(w, img_right))
 
         return view_top, view_bottom, view_left, view_right
-        
-    def polygon_to_minimap_coords(self, polygon_points):
-        # Recieve polygon points as (y_coords, x_coords)
-        y_coords, x_coords = polygon_points
 
-        # Might be slower for large polygons, but easier to group by rows and display
-        coord_rows = defaultdict(list)
-        for x, y in zip(x_coords, y_coords):
-            coord_rows[y].append(x)
-
-        return coord_rows
     
-    def show_annotated_area(self, polygon_area_idx, color=[255,255,255]):
-        # Convert RGB color to hex string for Tkinter
-        color = "#{:02x}{:02x}{:02x}".format(*color)
-        if polygon_area_idx is not None:
-            minimap_coord_rows = self.polygon_to_minimap_coords(polygon_area_idx)
-
-            # Scale factors
-            sx = self.mini_img_w / self.full_img_w
-            sy = self.mini_img_h / self.full_img_h
-
-            # Offset factors to center minimap image
-            offset_x = (self.w - self.mini_img_w) / 2
-            offset_y = (self.h - self.mini_img_h) / 2
-
-            for y, xlist in minimap_coord_rows.items():
-                xlist.sort()
-
-                # compress each row into continuous segments
-                start = prev = xlist[0]
-                for x in xlist[1:] + [None]:
-                    if x != prev + 1:
-                        mx0 = start * sx + offset_x
-                        mx1 = (prev + 1) * sx + offset_x
-                        my0 = y * sy + offset_y
-                        my1 = (y + 1) * sy + offset_y
-                        self.canvas.create_rectangle(
-                            mx0, my0, mx1, my1,
-                            fill=color, outline="",
-                            tags=("annotated_area",)
-                        )
-                        start = x
-                    prev = x
-        self.canvas.tag_raise("annotated_area")
-        self.canvas.tag_raise(self.viewport_item)
-
-    def clear_selected_annotated_area(self, polygon_area_idx):
-        if polygon_area_idx is not None:
-            minimap_coord_rows = self.polygon_to_minimap_coords(polygon_area_idx, remove=True)
-
-            self.canvas.delete("annotated_area")  # Clear all annotated areas
-            self.show_annotated_area(np.where(self.stored_area_idx)) # Redraw annotated areas except removed one
-
-
-    def polygon_to_minimap_coords(self, polygon_points, remove=False):
-        # Recieve polygon points as (y_coords, x_coords)
-        y_coords, x_coords = polygon_points
-
-        # Might be slower for large polygons, but easier to group by rows and display
-        coord_rows = defaultdict(list)
-        for x, y in zip(x_coords, y_coords):
-            coord_rows[y].append(x)
-            if remove:
-                self.stored_area_idx[y, x] = 0  # Remove annotated area
-            else:
-                self.stored_area_idx[y, x] = 1  # Mark annotated area
-
-        return coord_rows
-
-    def delete_annotated_areas(self):
-        self.canvas.delete("annotated_area")
-        # Reset stored annotated areas
-        if self.full_img_h is not None and self.full_img_w is not None:
-            self.stored_area_idx = np.zeros((self.full_img_h, self.full_img_w), dtype=np.uint8)
-
-    def save_annotated_area(self, filepath):
-        np.savez_compressed(filepath, area_idx=self.stored_area_idx, allow_pickle=True)
+    def show_changed_area(self, img, changed_area_mask, color=[255,255,255]):
+        """Update only changed areas on image to the specified color"""
+        minimap_img = img.copy()
+        minimap_img[changed_area_mask] = color
+        self.set_image(minimap_img)

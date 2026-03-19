@@ -1,7 +1,7 @@
 '''
 Data classes for application state management
 
-Last modified: Feb 2026
+Last modified: Mar 2026
 '''
 
 import numpy as np
@@ -127,6 +127,11 @@ class AnnotationState:
     # Zoom window state
     zoom_window_open: bool = False
     zoom_bbox_img: tuple[int,int,int,int] = None
+
+    # Undo and redo stacks
+    undo_stack: list[tuple[list[int], list[int], tuple[int, int, int, int]]] = field(default_factory=list) # List of polygon indices and their previous colours
+    redo_stack: list[tuple[list[int], list[int], tuple[int, int, int, int]]] = field(default_factory=list)
+    stack_limit: int = 25 # Limit for undo/redo stack size
 
 @dataclass(slots=True)
 class AppState:

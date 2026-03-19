@@ -1,7 +1,7 @@
 '''
 Annotation panel setup and functions
 
-Last modified: Jan 2026
+Last modified: Mar 2026
 '''
 
 from email.mime import text
@@ -41,18 +41,36 @@ class AnnotationPanel(ctk.CTkFrame):
         # Labels for annotation
         self.labels_frame = ctk.CTkFrame(self)
         self.labels_frame.grid(row=0, column=1, padx=5, pady=5, sticky="n")
-        ctk.CTkLabel(self.labels_frame, text="Labels").grid(row=0, column=0, columnspan=4, sticky="nsew", pady=5)
-        ctk.CTkButton(self.labels_frame, text="ice", width=20, fg_color="#bf803f", text_color="#000000",
-                      command=command_parent.label_ice).grid(row=1, column=0, padx=5, pady=5)
-        ctk.CTkButton(self.labels_frame, text="water", width=20, fg_color="#3fbfbf", text_color="#000000",
-                      command=command_parent.label_water).grid(row=1, column=1, padx=5, pady=5)
+        ctk.CTkLabel(self.labels_frame, text="Labels").grid(row=0, column=0, columnspan=5, sticky="nsew", pady=5)
+        self.ice_btn = ctk.CTkButton(self.labels_frame, text="ice", width=20, fg_color="#bf803f", text_color="#000000",
+                      command=command_parent.label_ice)
+        self.ice_btn.grid(row=1, column=0, padx=5, pady=5)
+        self.water_btn = ctk.CTkButton(self.labels_frame, text="water", width=20, fg_color="#3fbfbf", text_color="#000000",
+                      command=command_parent.label_water)
+        self.water_btn.grid(row=1, column=1, padx=5, pady=5)
+        self.unknown_btn = ctk.CTkButton(self.labels_frame, text="unknown", width=20, fg_color="#969696", text_color="#000000",
+                      command=command_parent.label_unknown)
+        self.unknown_btn.grid(row=1, column=2, padx=5, pady=5)
+
+        self.ice_btn.bind("<Button-3>", lambda e: command_parent.bucket_fill(e, "ice"))
+        self.water_btn.bind("<Button-3>", lambda e: command_parent.bucket_fill(e, "water"))
+        self.unknown_btn.bind("<Button-3>", lambda e: command_parent.bucket_fill(e, "unknown"))
+
+        self.label_btn_default_style = {     # store default style
+            "text_color": self.ice_btn.cget("text_color"),
+            "font": self.ice_btn.cget("font")
+        }
+        self.label_btn_active_style = {      # define active style
+            "text_color": "white",
+            "font": ctk.CTkFont(family="Segoe UI", size=13, weight="bold")
+        }
+
         # Other options dropdown
-        self.other_options_list = ["shoal", "ship", "iceberg", "unknown"]
+        self.other_options_list = ["shoal", "ship", "iceberg"]
         self.other_options_color = {
             "shoal": "#00ff00",
             "ship": "#ffff00",
-            "iceberg": "#ff00ff",
-            "unknown": "#969696"
+            "iceberg": "#ff00ff"
         }
         self.other_options_var = ctk.StringVar(value="Other")
         self.other_options_menu = ctk.CTkOptionMenu(self.labels_frame, values=self.other_options_list, 
@@ -60,16 +78,21 @@ class AnnotationPanel(ctk.CTkFrame):
                                                     fg_color="#A5A5A5", button_color="#A5A5A5",
                                                     dropdown_fg_color="#A5A5A5", text_color="#000000",
                                                     width=40, corner_radius=10)
-        self.other_options_menu.grid(row=1, column=2, padx=5, pady=5)
+        self.other_options_menu.grid(row=1, column=3, padx=5, pady=5)
         ctk.CTkButton(self.labels_frame, text="reset from", 
-                      width=20, command=self.reset_label_from).grid(row=1, column=3, padx=5, pady=5)
-        
+                      width=20, command=self.reset_label_from).grid(row=1, column=4, padx=5, pady=5)
+        ctk.CTkButton(self.labels_frame, text="", width=15, image=ctk.CTkImage(Image.open(resource_path("icons/undo.png")), size=(15, 15)),
+                      command=command_parent.on_ctrl_z).grid(row=2, column=0, padx=5, pady=5, columnspan=3, sticky='e')
+        ctk.CTkButton(self.labels_frame, text="", width=15, image=ctk.CTkImage(Image.open(resource_path("icons/redo.png")), size=(15, 15)),
+                      command=command_parent.on_ctrl_y).grid(row=2, column=3, padx=5, pady=5, columnspan=2, sticky='w')
+
+
         # Local segmentation frame
         self.local_seg_frame = ctk.CTkFrame(self)
         self.local_seg_frame.grid(row=0, column=2, padx=5, pady=5, sticky="n")
         ctk.CTkLabel(self.local_seg_frame, text="Local Segmentation").grid(row=0, column=0, columnspan=3, sticky="nsew", pady=5)
         self.local_segmentation_btn = ctk.CTkButton(self.local_seg_frame, text="Select Area", 
-                      width=20, command=self.command_parent.select_area_local_segmentation).grid(row=1, column=0, padx=5, pady=5)
+                      width=20, command=self.command_parent.select_area_local_seg).grid(row=1, column=0, padx=5, pady=5)
         self.local_seg_switch = ctk.CTkSwitch(
             self.local_seg_frame,
             text="HH-HV",
@@ -102,6 +125,8 @@ class AnnotationPanel(ctk.CTkFrame):
         self.unsaved_changes = False
         self.save_button.configure(state=ctk.NORMAL)
 
+        self.bind("<Escape>", command_parent.exit_bucket_fill)
+
     def select_other_label(self, choice):
         # Using if, elif for ensuring version compatibility
         if choice == "shoal":
@@ -130,7 +155,6 @@ class AnnotationPanel(ctk.CTkFrame):
                 else:
                     self.command_parent._finish_polygon()
             else: # Assume they want to reset the whole image
-                #messagebox.showinfo("Error", "Please select a polygon area first.", parent=self.master)
                 anno.selected_polygon_window = (0, scene.img.shape[0], 0, scene.img.shape[1])
 
         # Create new window
@@ -265,9 +289,12 @@ class AnnotationPanel(ctk.CTkFrame):
             messagebox.showinfo("Error", f"Invalid label source {key}.", parent=self.zoom_window)
             return
 
-
         # Update the prediction in the selected area
         if anno.selected_polygon_area_idx:
+            if anno.undo_stack and len(anno.undo_stack) > anno.stack_limit:
+                anno.undo_stack.pop(0)  # Remove oldest entry if stack limit exceeded
+            anno.undo_stack.append((anno.selected_polygon_area_idx, scene.predictions[scene.active_source][anno.selected_polygon_area_idx].copy(), anno.selected_polygon_window))
+            
             self.command_parent.mode_var_lbl_source.set("Custom_Annotation")
             main_key = self.command_parent.mode_var_lbl_source.get()
             # if main_key != "Custom_Annotation":
@@ -300,10 +327,14 @@ class AnnotationPanel(ctk.CTkFrame):
             self.command_parent.lbl_source_btn[main_key].configure(text=f"* {main_key}")
             self.unsaved_changes = True
             #self.save_button.configure(state=ctk.NORMAL)
-
-            self.command_parent.minimap.clear_selected_annotated_area(anno.selected_polygon_area_idx)
+            changed_area_mask = scene.predictions[scene.active_source][:,:,0] != scene.predictions[scene.lbl_sources[0]][:,:,0]
+            self.command_parent.minimap.show_changed_area(scene.img, changed_area_mask)
         else:
             # Whole area reset
+            if not messagebox.askyesnocancel("Reset whole annotation", "Please note you are about to reset the entire annotation.\n" \
+            "This action cannot be undone.", parent=self.master):
+                return
+            anno.undo_stack.clear() # Clear undo stack as we are replacing the whole thing, no point in undoing back to previous state
             scene.predictions[scene.active_source] = scene.predictions[key].copy()
             scene.land_nan_masks[scene.active_source] = scene.land_nan_masks[key].copy()
             scene.boundmasks[scene.active_source] = scene.boundmasks[key].copy()
@@ -315,9 +346,17 @@ class AnnotationPanel(ctk.CTkFrame):
             self.command_parent.lbl_source_btn[scene.active_source].configure(text=f"* {scene.active_source}")
             self.unsaved_changes = True
             #self.save_button.configure(state=ctk.NORMAL)
-            self.command_parent.minimap.delete_annotated_areas()
+            self.command_parent.minimap.set_image(scene.img)
+        
+        anno.redo_stack.clear()
 
     def save_annotation(self):
+        """
+        Save the current annotation and notes to disk, and mark as saved.
+         - Saves the annotation as an image file (.png)
+         - Saves the notes in a JSON file with timestamp
+         - Also saves a mask of the changed area compared to the original prediction for reference (.png)
+        """
         scene = self.app_state.scene
         anno = self.app_state.anno
 
@@ -365,8 +404,10 @@ class AnnotationPanel(ctk.CTkFrame):
         anno.annotation_notes = notes
 
         annotated_area_file_folder = os.path.split(file_path)[0]
-        annotated_area_file_path = os.path.join(annotated_area_file_folder, "annotated_area.npz")
-        self.command_parent.minimap.save_annotated_area(annotated_area_file_path)
+        changed_area_mask = scene.predictions[scene.active_source][:,:,0] != scene.predictions[scene.lbl_sources[0]][:,:,0]
+        annotated_area_file_path = os.path.join(annotated_area_file_folder, "changed_area.png")
+        # Save the changed area mask as an single channel image
+        Image.fromarray(changed_area_mask).save(annotated_area_file_path)
 
         # mark as saved
         self.command_parent.lbl_source_btn[key].configure(text=key)
@@ -382,16 +423,6 @@ class AnnotationPanel(ctk.CTkFrame):
 
     def clear_notes(self):
         self.notes_text.delete("1.0", "end")
-
-
-    def draw_rectangle(self):
-        pass
-    def draw_polygon(self):
-        pass
-    def label_ice(self):
-        pass
-    def label_water(self):
-        pass
         
 
 # if __name__ == '__main__':

@@ -1,3 +1,9 @@
+"""
+Model loading and inference utilities for RS-visualizer.
+
+Last modified: Mar 2026
+"""
+
 import numpy as np
 from model.DL.unet.unet_model import UNet
 import torch

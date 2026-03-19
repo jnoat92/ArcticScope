@@ -2,7 +2,7 @@
 Image input/output related functions
 Handles loading of images and predictions and path to external resources
 
-Last modified: Feb 2026
+Last modified: Mar 2026
 '''
 
 from PIL import Image
@@ -108,9 +108,7 @@ def load_existing_annotation(scene_name):
     folder_path = os.path.join(folder_name, scene_name)
     file_path = folder_path + "/custom_annotation.png"
     notes_file_path = folder_name + "/annotation_notes.json"
-    annotated_area_path = folder_path + "/annotated_area.npz"
     notes = ""
-    minimap_area_idx = None
     if os.path.exists(folder_path) and os.path.exists(file_path):
         #print(folder_path)
         annotation_file = os.path.join(folder_path, "custom_annotation.png")
@@ -123,16 +121,10 @@ def load_existing_annotation(scene_name):
                         notes = existing_notes[scene_name].get("notes", "").strip()
                 except json.JSONDecodeError:
                     pass
-        if os.path.exists(annotated_area_path):
-            try:
-                data = np.load(annotated_area_path)
-                minimap_area_idx = data["area_idx"]
-            except Exception as e:
-                print("Error loading annotated area:", e)
 
-        return custom_anno_variable, notes, minimap_area_idx
+        return custom_anno_variable, notes
     else:
-        return None, notes, minimap_area_idx
+        return None, notes
     
 def load_rcm_product(data_dir):
     """
@@ -406,32 +398,10 @@ def scale_hh_hv_earth_geometry(rcm_data, target_spacing_m=200):
     # Create transformer for geocoding later
     transformer = Transformer.from_crs(rcm_data["src_crs"], "EPSG:4326", always_xy=True)
 
-    # # create output folder inside product_dir
-    # out_dir = product_dir / "200m_pixel_spacing"
-    # out_dir.mkdir(exist_ok=True)
-    # out_path = out_dir / (img_path.stem + "_200m.img")
-
-    # # save unified .img
-    # with rasterio.open(
-    #     out_path,
-    #     "w",
-    #     driver="HFA",
-    #     height=hh_200m.shape[0],
-    #     width=hh_200m.shape[1],
-    #     count=2,
-    #     dtype=hh_200m.dtype,
-    #     crs=src_crs,
-    #     transform=dst_transform
-    # ) as dst:
-    #     dst.write(hh_200m, 1)
-    #     dst.write(hv_200m, 2)
-    #     dst.set_band_description(1, "HH")
-    #     dst.set_band_description(2, "HV")
-
     # Scale tie-point image coordinates to match the new pixel spacing. 
     # This is a rough adjustment that assumes the tie points are on a regular grid 
     # and that the resampling is approximately uniform. For more complex cases, 
-    # you might want to re-derive tie points after resampling or use a more sophisticated approach.
+    # might want to re-derive tie points after resampling or use a more sophisticated approach.
     src_h, src_w = rcm_data["hh"].shape
     rs = dst_height / src_h   # row scale
     cs = dst_width  / src_w   # col scale
@@ -517,7 +487,7 @@ def scale_hh_hv_sensor_geometry(
     # Scale tie-point image coordinates to match the new pixel spacing. 
     # This is a rough adjustment that assumes the tie points are on a regular grid 
     # and that the resampling is approximately uniform. For more complex cases, 
-    # you might want to re-derive tie points after resampling or use a more sophisticated approach.
+    # might want to re-derive tie points after resampling or use a more sophisticated approach.
     rs = dst_h / src_h   # row scale
     cs = dst_w / src_w   # col scale
 
@@ -645,6 +615,7 @@ def run_pred_model(lbl_source, img, land_mask, model_path, device="cpu"):
 
 def build_land_masks_earth_geometry(shp_path: str, rcm_product: list[dict]) -> dict:
     """
+    Build a land mask for an RCM product in earth geometry using a shapefile of ocean polygons.
       - The shapefile polygons represent OCEAN (ocean=1), so land is the inverse.
       - add boolean masks: True=land, False=other - to the dict  
     """

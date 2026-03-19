@@ -1,16 +1,17 @@
 '''
 Overlay related functions
 
-Last modified: Jan 2026
+Last modified: Mar 2026
 '''
 
 import numpy as np
 from core.utils import blend_overlay_cuda, blend_overlay
 from numba import cuda
 
-    # Display handle
+# Display handle
 
 def overlay_GPU(pred, img, boundmask, landmask, local_boundmask, alpha):
+    """Blend the prediction and image using GPU acceleration with Numba's CUDA."""
     # Using Numba on the GPU to parallelize 
     h, w, c = pred.shape
     pred = pred.astype(np.float32)
@@ -34,7 +35,7 @@ def overlay_GPU(pred, img, boundmask, landmask, local_boundmask, alpha):
     return blended.astype(np.uint8)
 
 def overlay(pred, img, boundmask, landmask, local_boundmask,alpha):
-
+    """Blend the prediction and image using CPU with Numba for parallelization."""
     # alpha = self.alpha
     # beta = 1 - alpha
     # overlay = alpha * self.pred_resized + beta * self.img_resized
@@ -49,7 +50,9 @@ def overlay(pred, img, boundmask, landmask, local_boundmask,alpha):
     return overlay.astype(np.uint8)
 
 def compose_overlay(pred, img, boundmask, landmask, local_boundmask, alpha, use_gpu=False):
+    """Compose the overlay image by blending the prediction and original image, with options for GPU acceleration."""
     if use_gpu:
         return overlay_GPU(pred, img, boundmask, landmask, local_boundmask, alpha)
     else:
         return overlay(pred, img, boundmask, landmask, local_boundmask, alpha)
+    
