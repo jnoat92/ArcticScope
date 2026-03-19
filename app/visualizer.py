@@ -13,6 +13,7 @@ import numpy as np
 import cv2
 import os
 from rasterio.transform import xy
+import time
 
 from ui.evaluation import EvaluationPanel
 from ui.annotation import AnnotationPanel
@@ -430,8 +431,12 @@ class Visualizer(ctk.CTk):
 
         model_path = model_paths[0] if model_paths else None
         model_path = os.path.join(model_folder, model_path) if model_path else None
-        variables = run_pred_model(scene.lbl_sources[0], scene.rcm_200m_data, scene.base_land_mask, 
-                                                                  model_path=model_path, device='cpu')
+        variables = run_pred_model(scene.lbl_sources[0], scene.rcm_200m_data, scene.land_mask_200m, 
+                                                                  model_path=model_path, 
+                                                                  target_width = scene.rcm_scaled_data["dst_width"],
+                                                                  target_height = scene.rcm_scaled_data["dst_height"],
+                                                                  target_spacing=40, device='cpu')
+        
         existing_anno, anno.annotation_notes = load_existing_annotation(scene.scene_name)
 
         if existing_anno is not None:
@@ -563,6 +568,7 @@ class Visualizer(ctk.CTk):
             self.loading_bar_label.grid(row=0, column=0)
             self.loading_bar.grid(row=1, column=0)
             self.update_idletasks()
+            load_image_start = time.time()
 
             self.loading_bar.set(0) # Update loading bar after loading images
             self.loading_bar_label.configure(text="Loading images...")
@@ -583,22 +589,31 @@ class Visualizer(ctk.CTk):
             self.update_idletasks()      
 
             # Scale image
-            rcm_200m_data = scale_hh_hv(rcm_data)
+            rcm_200m_data, rcm_scaled_data = scale_hh_hv(rcm_data)
+
+            scale_time = time.time()
+            print(f"Images scaled in {scale_time - load_image_start:.2f} seconds.")
 
             self.loading_bar.set(0.35) # Update loading bar after loading images
             self.loading_bar_label.configure(text="Building land mask...")
-            self.update_idletasks()  
+            self.update_idletasks()
 
             # Build land masks
-            land_mask = build_land_masks(rcm_200m_data)
+            land_mask_200m = build_land_masks(rcm_200m_data)
+            land_mask = build_land_masks(rcm_scaled_data)
+
+            land_mask_time = time.time()
+            print(f"Land mask built in {land_mask_time - scale_time:.2f} seconds.")
 
             self.loading_bar.set(0.5) # Update loading bar after loading images
             self.loading_bar_label.configure(text="Normalizing data...")
             self.update_idletasks()  
 
             # Normalize and prepare images
-            raw_img, orig_img, hist, n_valid, nan_mask, geo_coord_helpers = normalize_and_prepare_images(rcm_200m_data)
+            raw_img, orig_img, hist, n_valid, nan_mask, geo_coord_helpers = normalize_and_prepare_images(rcm_scaled_data)
 
+            normalize_time = time.time()
+            print(f"Images normalized and prepared in {normalize_time - land_mask_time:.2f} seconds.")
 
             # Save raw images to app state for later use (e.g., layering)
             scene.raw_img = raw_img
@@ -607,7 +622,9 @@ class Visualizer(ctk.CTk):
             scene.n_valid = n_valid
             scene.nan_mask = nan_mask
             scene.base_land_mask = land_mask
+            scene.land_mask_200m = land_mask_200m
             scene.rcm_200m_data = rcm_200m_data
+            scene.rcm_scaled_data = rcm_scaled_data
 
             # Save geo coord helpers to app state for later use
             scene.geo_coord_helpers = geo_coord_helpers
@@ -645,7 +662,10 @@ class Visualizer(ctk.CTk):
             self.loading_bar_label.configure(text="Generating prediction...")
             self.update_idletasks()
 
+            start_load_pred = time.time()
             self.load_pred()
+            end_load_pred = time.time()
+            print(f"Prediction loaded in {end_load_pred - start_load_pred:.2f} seconds.")
 
             if not self.choose_lbl_source(plot=False):
                 scene.folder_path = ''
@@ -1372,8 +1392,8 @@ class Visualizer(ctk.CTk):
             else:
                 # To handle cases where transformer is not available, use tie points to interpolate lat/lon
                 if scene.geo_coord_helpers["transformer"] is None:
-                    row_src, col_src = ds_to_src_pixel(y, x, scene.rcm_200m_data["src_height"], scene.rcm_200m_data["src_width"],
-                                                    scene.rcm_200m_data["dst_height"], scene.rcm_200m_data["dst_width"])
+                    row_src, col_src = ds_to_src_pixel(y, x, scene.rcm_scaled_data["src_height"], scene.rcm_scaled_data["src_width"],
+                                                    scene.rcm_scaled_data["dst_height"], scene.rcm_scaled_data["dst_width"])
                     lat, lon = self.pix2ll(row_src, col_src)
                 else:
                     # Convert downscaled image coordinates to original image coordinates
