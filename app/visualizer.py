@@ -1088,6 +1088,7 @@ class Visualizer(ctk.CTk):
             self._on_left_click(event)
         else:
             self.after(180, lambda: self.choose_click_event(event))
+            self.double_click_flag = False
 
     def choose_click_event(self, event):
         """Determine whether the click was a single or double click and call the appropriate handler."""
