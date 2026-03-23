@@ -519,15 +519,16 @@ def scale_hh_hv_sensor_geometry(
         "tie_lons": rcm_data["tie_lons"],
     }
 
-def scale_hh_hv(rcm_data):
+def scale_hh_hv(rcm_data, target_spacing=200):
+    # Keeping 200m scaling for prediction model input, but also return scaled data for visualization
     if rcm_data["geometry"] == "earth":
         rcm_200m_data = scale_hh_hv_earth_geometry(rcm_data, target_spacing_m=200)
-        rcm_scaled_data = scale_hh_hv_earth_geometry(rcm_data, target_spacing_m=40)
+        rcm_scaled_data = scale_hh_hv_earth_geometry(rcm_data, target_spacing_m=target_spacing)
     else:
         rcm_200m_data = scale_hh_hv_sensor_geometry(rcm_data, target_spacing_m=200, 
                                                              range_spacing_m_key="range_pixel_spacing_m", 
                                                              azimuth_spacing_m_key="azimuth_pixel_spacing_m")
-        rcm_scaled_data = scale_hh_hv_sensor_geometry(rcm_data, target_spacing_m=40, 
+        rcm_scaled_data = scale_hh_hv_sensor_geometry(rcm_data, target_spacing_m=target_spacing, 
                                                              range_spacing_m_key="range_pixel_spacing_m", 
                                                              azimuth_spacing_m_key="azimuth_pixel_spacing_m")
     return rcm_200m_data, rcm_scaled_data
@@ -613,7 +614,6 @@ def run_pred_model(lbl_source, img, land_mask, model_path, target_width, target_
     if target_spacing != model_spacing_m:
         new_size = (target_width, target_height)
         colored_pred_map = cv2.resize(colored_pred_map, new_size, interpolation=cv2.INTER_NEAREST)
-        land_mask = cv2.resize(land_mask.astype(np.uint8), new_size, interpolation=cv2.INTER_NEAREST).astype(bool)
         valid_mask = cv2.resize(valid_mask.astype(np.uint8), new_size, interpolation=cv2.INTER_NEAREST).astype(bool)
 
     colored_pred_map[land_mask] = [255, 255, 255]

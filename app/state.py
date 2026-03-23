@@ -40,6 +40,9 @@ class SceneState:
     raw_img: dict[str, np.ndarray] = field(default_factory=dict)
     orig_img: dict[str, np.ndarray] = field(default_factory=dict)
 
+    # Target spacing for RCM data (e.g., 200m or 100m)
+    target_spacing: int = 100
+
     # Store histogram data for contrast enhancement
     contrast_img: dict[str, np.ndarray] = field(default_factory=dict)
     nan_mask: dict[str, np.ndarray] = field(default_factory=dict)
