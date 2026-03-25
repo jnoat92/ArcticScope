@@ -54,6 +54,7 @@ def crop_resize(pred, img, boundmask, landmask,
     landmask_resized = cv2.resize(landmask_crop.astype(np.uint8), (zoomed_width, zoomed_height), interpolation=cv2.INTER_NEAREST).astype(bool)
     nan_mask_resized = cv2.resize(nan_mask_crop.astype(np.uint8), (zoomed_width, zoomed_height), interpolation=cv2.INTER_NEAREST).astype(bool)
 
+    # For boundmask only, use dilation to make it more visible at lower zoom levels
     boundmask_resized = np.uint8(binary_dilation(boundmask_resized.astype('uint8'), np.ones((2,2)).astype('uint8')))
 
     # Adjust where the image is drawn (canvas position)
