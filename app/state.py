@@ -40,6 +40,9 @@ class SceneState:
     raw_img: dict[str, np.ndarray] = field(default_factory=dict)
     orig_img: dict[str, np.ndarray] = field(default_factory=dict)
 
+    # Target spacing for RCM data (e.g., 200m or 100m)
+    target_spacing: int = 100
+
     # Store histogram data for contrast enhancement
     contrast_img: dict[str, np.ndarray] = field(default_factory=dict)
     nan_mask: dict[str, np.ndarray] = field(default_factory=dict)
@@ -49,6 +52,7 @@ class SceneState:
     hist: dict[str, np.ndarray] = field(default_factory=dict)
     n_valid: dict[str, np.ndarray] = field(default_factory=dict)
     rcm_200m_data: dict[str, np.ndarray] = None
+    rcm_scaled_data: dict[str, np.ndarray] = None
 
     predictions: dict[str, np.ndarray] = field(default_factory=dict)
     land_nan_masks: dict[str, np.ndarray] = field(default_factory=dict)
@@ -56,6 +60,7 @@ class SceneState:
 
     # Store base land mask for RCM scenes
     base_land_mask: np.ndarray = None
+    land_mask_200m: np.ndarray = None
 
     tie_lines: np.ndarray = None
     tie_pixels: np.ndarray = None

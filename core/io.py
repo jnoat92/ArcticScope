@@ -519,14 +519,19 @@ def scale_hh_hv_sensor_geometry(
         "tie_lons": rcm_data["tie_lons"],
     }
 
-def scale_hh_hv(rcm_data):
+def scale_hh_hv(rcm_data, target_spacing=200):
+    # Keeping 200m scaling for prediction model input, but also return scaled data for visualization
     if rcm_data["geometry"] == "earth":
         rcm_200m_data = scale_hh_hv_earth_geometry(rcm_data, target_spacing_m=200)
+        rcm_scaled_data = scale_hh_hv_earth_geometry(rcm_data, target_spacing_m=target_spacing)
     else:
         rcm_200m_data = scale_hh_hv_sensor_geometry(rcm_data, target_spacing_m=200, 
                                                              range_spacing_m_key="range_pixel_spacing_m", 
                                                              azimuth_spacing_m_key="azimuth_pixel_spacing_m")
-    return rcm_200m_data
+        rcm_scaled_data = scale_hh_hv_sensor_geometry(rcm_data, target_spacing_m=target_spacing, 
+                                                             range_spacing_m_key="range_pixel_spacing_m", 
+                                                             azimuth_spacing_m_key="azimuth_pixel_spacing_m")
+    return rcm_200m_data, rcm_scaled_data
 
 def build_land_masks(rcm_200m_data):
     shp_path = resource_path("landmask/StatCan_ocean.shp")
@@ -588,7 +593,8 @@ def normalize_and_prepare_images(rcm_200m_data):
     return raw_img, img_base, hist, n_valid, nan_mask, geo_coord_helpers
 
 
-def run_pred_model(lbl_source, img, land_mask, model_path, device="cpu"):
+def run_pred_model(lbl_source, img, land_mask, model_path, target_width, target_height, 
+                   target_spacing, model_spacing_m = 200, device="cpu"):
     hh = img["hh"]
     hv = img["hv"]
     valid_mask = np.isfinite(hh) & np.isfinite(hv)
@@ -603,6 +609,12 @@ def run_pred_model(lbl_source, img, land_mask, model_path, device="cpu"):
         valid_mask=valid_mask,
         device=device,
     )
+
+    # Scale colored_pred_map back to original image size if needed (e.g., if model runs on 200m but original is 100m)
+    if target_spacing != model_spacing_m:
+        new_size = (target_width, target_height)
+        colored_pred_map = cv2.resize(colored_pred_map, new_size, interpolation=cv2.INTER_NEAREST)
+        valid_mask = cv2.resize(valid_mask.astype(np.uint8), new_size, interpolation=cv2.INTER_NEAREST).astype(bool)
 
     colored_pred_map[land_mask] = [255, 255, 255]
     colored_pred_map[~valid_mask] = [255, 255, 255]

@@ -431,7 +431,11 @@ class Visualizer(ctk.CTk):
         model_path = model_paths[0] if model_paths else None
         model_path = os.path.join(model_folder, model_path) if model_path else None
         variables = run_pred_model(scene.lbl_sources[0], scene.rcm_200m_data, scene.base_land_mask, 
-                                                                  model_path=model_path, device='cpu')
+                                                                  model_path=model_path, 
+                                                                  target_width = scene.rcm_scaled_data["dst_width"],
+                                                                  target_height = scene.rcm_scaled_data["dst_height"],
+                                                                  target_spacing=scene.target_spacing, device='cpu')
+        
         existing_anno, anno.annotation_notes = load_existing_annotation(scene.scene_name)
 
         if existing_anno is not None:
@@ -583,22 +587,22 @@ class Visualizer(ctk.CTk):
             self.update_idletasks()      
 
             # Scale image
-            rcm_200m_data = scale_hh_hv(rcm_data)
+            rcm_200m_data, rcm_scaled_data = scale_hh_hv(rcm_data, target_spacing=scene.target_spacing)
 
             self.loading_bar.set(0.35) # Update loading bar after loading images
             self.loading_bar_label.configure(text="Building land mask...")
-            self.update_idletasks()  
+            self.update_idletasks()
 
             # Build land masks
-            land_mask = build_land_masks(rcm_200m_data)
+            land_mask = build_land_masks(rcm_scaled_data)
+
 
             self.loading_bar.set(0.5) # Update loading bar after loading images
             self.loading_bar_label.configure(text="Normalizing data...")
             self.update_idletasks()  
 
             # Normalize and prepare images
-            raw_img, orig_img, hist, n_valid, nan_mask, geo_coord_helpers = normalize_and_prepare_images(rcm_200m_data)
-
+            raw_img, orig_img, hist, n_valid, nan_mask, geo_coord_helpers = normalize_and_prepare_images(rcm_scaled_data)
 
             # Save raw images to app state for later use (e.g., layering)
             scene.raw_img = raw_img
@@ -608,6 +612,7 @@ class Visualizer(ctk.CTk):
             scene.nan_mask = nan_mask
             scene.base_land_mask = land_mask
             scene.rcm_200m_data = rcm_200m_data
+            scene.rcm_scaled_data = rcm_scaled_data
 
             # Save geo coord helpers to app state for later use
             scene.geo_coord_helpers = geo_coord_helpers
@@ -1083,6 +1088,7 @@ class Visualizer(ctk.CTk):
             self._on_left_click(event)
         else:
             self.after(180, lambda: self.choose_click_event(event))
+            self.double_click_flag = False
 
     def choose_click_event(self, event):
         """Determine whether the click was a single or double click and call the appropriate handler."""
@@ -1372,8 +1378,8 @@ class Visualizer(ctk.CTk):
             else:
                 # To handle cases where transformer is not available, use tie points to interpolate lat/lon
                 if scene.geo_coord_helpers["transformer"] is None:
-                    row_src, col_src = ds_to_src_pixel(y, x, scene.rcm_200m_data["src_height"], scene.rcm_200m_data["src_width"],
-                                                    scene.rcm_200m_data["dst_height"], scene.rcm_200m_data["dst_width"])
+                    row_src, col_src = ds_to_src_pixel(y, x, scene.rcm_scaled_data["src_height"], scene.rcm_scaled_data["src_width"],
+                                                    scene.rcm_scaled_data["dst_height"], scene.rcm_scaled_data["dst_width"])
                     lat, lon = self.pix2ll(row_src, col_src)
                 else:
                     # Convert downscaled image coordinates to original image coordinates
